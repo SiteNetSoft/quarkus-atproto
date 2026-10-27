@@ -59,6 +59,21 @@ import io.vertx.ext.web.RoutingContext;
  * <li>{@code POST /oauth/revoke}: revokes the whole grant of an access or refresh token.</li>
  * </ul>
  * Every response carries {@code DPoP-Nonce}. Knobs and counters are reset by {@link FakeAtproto#clear()}.
+ * <p>
+ * <b>Deliberate leniencies</b> (where the reference server is stricter):
+ * <ul>
+ * <li>Client metadata validation covers what the OAuth flow depends on ({@code client_id} = URL,
+ * {@code redirect_uris}, {@code dpop_bound_access_tokens}, {@code grant_types}, {@code response_types},
+ * {@code scope} with {@code atproto}, the auth method, ES256 and the presence of keys). It does not check
+ * {@code application_type} against the redirect URI schemes, {@code client_uri}/{@code logo_uri}/{@code policy_uri}
+ * origins, that {@code client_id} is https with a path, metadata caching headers, or the document size.</li>
+ * <li>Client metadata and JWKS fetches are not restricted to public addresses or https: they go to whatever URL the
+ * {@code client_id} names (in tests, the app under test on loopback). There is no SSRF guard.</li>
+ * <li>{@code /oauth/revoke} accepts a request without client authentication and without DPoP when no
+ * {@code client_id} is sent (RFC 7009 leniency); when a {@code client_id} is sent, the client must authenticate.</li>
+ * <li>The DPoP nonce is a single value: no grace period for the previous nonce after a rotation (so this fake is
+ * stricter there).</li>
+ * </ul>
  */
 public final class FakeAuthorizationServer {
 
@@ -365,6 +380,8 @@ public final class FakeAuthorizationServer {
           throw new OAuthError(400, "invalid_grant", "DPoP key differs from the one the session is bound to");
         }
         if (!rt.used().compareAndSet(false, true)) {
+          // like the reference oauth-provider: a replayed refresh token ends the whole session
+          revokedGrants.add(rt.grant().id());
           throw new OAuthError(400, "invalid_grant", "Refresh token replayed");
         }
         refreshCount.incrementAndGet();

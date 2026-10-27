@@ -100,14 +100,72 @@ class FakeAuthorizationServerTest {
   }
 
   String assertion(KeyPair key, String aud) {
+    return assertion(key, Map.of("aud", aud));
+  }
+
+  /** A client assertion with {@code overrides} applied to otherwise valid claims. */
+  String assertion(KeyPair key, Map<String, Object> overrides) {
     Map<String, Object> header = Map.of("alg", "ES256", "typ", "JWT", "kid", "k1");
     Map<String, Object> claims = new LinkedHashMap<>();
     claims.put("iss", clientId);
     claims.put("sub", clientId);
-    claims.put("aud", aud);
+    claims.put("aud", fake.asUrl().toString());
     claims.put("jti", UUID.randomUUID().toString());
     claims.put("iat", Instant.now().getEpochSecond());
+    claims.putAll(overrides);
     return TestClient.jwt(header, claims, key);
+  }
+
+  /** PAR with an assertion carrying {@code overrides}: must be {@code 401 invalid_client} citing {@code why}. */
+  void assertAssertionRejected(Map<String, Object> overrides, String why) {
+    Map<String, String> p = confidentialPar("v".repeat(50), CLIENT_KEY);
+    p.put("client_assertion", assertion(CLIENT_KEY, overrides));
+    HttpResponse<String> r = client.postAsWithNonce(par(), p);
+    assertEquals(401, r.statusCode(), r.body());
+    assertEquals("invalid_client", json(r).get("error").asText());
+    assertTrue(json(r).get("error_description").asText().contains(why), r.body());
+  }
+
+  @Test
+  void clientAssertionClaimsAreChecked() {
+    long now = Instant.now().getEpochSecond();
+    assertAssertionRejected(Map.of("iss", appBase + "/other-client.json"), "iss and sub");
+    assertAssertionRejected(Map.of("sub", appBase + "/other-client.json"), "iss and sub");
+    assertAssertionRejected(Map.of("iat", now - 301), "iat");
+    assertAssertionRejected(Map.of("iat", now + 61), "iat");
+    assertAssertionRejected(Map.of("aud", "http://elsewhere.example"), "aud");
+    assertAssertionRejected(Map.of("exp", now - 1), "expired");
+    assertEquals(0, fake.as().parCount());
+    // the baseline passes
+    Map<String, String> p = confidentialPar("v".repeat(50), CLIENT_KEY);
+    p.put("client_assertion", assertion(CLIENT_KEY, Map.of()));
+    assertEquals(201, client.postAsWithNonce(par(), p).statusCode());
+  }
+
+  /** A token request for a fresh code; each case gets its own code because a failed exchange burns it. */
+  void assertTokenRejected(java.util.function.Consumer<Map<String, String>> mutate, String why) {
+    String verifier = TestClient.random();
+    String code = authorize(confidentialPar(verifier, CLIENT_KEY));
+    Map<String, String> t = tokenParams(code, verifier);
+    mutate.accept(t);
+    HttpResponse<String> r = client.postAsWithNonce(token(), t);
+    assertEquals(400, r.statusCode(), r.body());
+    assertEquals("invalid_grant", json(r).get("error").asText());
+    assertTrue(json(r).get("error_description").asText().contains(why), r.body());
+  }
+
+  @Test
+  void tokenRequestIsCheckedAgainstTheAuthorization() {
+    assertTokenRejected(t -> t.put("redirect_uri", appBase + "/elsewhere"), "redirect_uri");
+    assertTokenRejected(t -> {
+      // the same code, redeemed by another (public) client
+      t.put("client_id", TestClient.devClientId(TestClient.REDIRECT, "atproto"));
+      t.remove("client_assertion");
+      t.remove("client_assertion_type");
+    }, "another client");
+    assertTokenRejected(t -> t.remove("code_verifier"), "PKCE");
+    assertTokenRejected(t -> t.put("code_verifier", TestClient.random()), "PKCE");
+    assertEquals(0, fake.as().tokenCount());
   }
 
   Map<String, String> confidentialPar(String verifier, KeyPair assertionKey) {
@@ -308,17 +366,22 @@ class FakeAuthorizationServerTest {
     JsonNode body = json(first);
     assertFalse(body.get("refresh_token").asText().equals(s.refreshToken()));
     assertEquals(alice.did().value(), body.get("sub").asText());
+    // another DPoP key cannot use the new refresh token
+    TestClient other = new TestClient();
+    Map<String, String> next = Map.of("grant_type", "refresh_token", "refresh_token",
+        body.get("refresh_token").asText(), "client_id", clientId);
+    JsonNode stolen = json(other.postAsWithNonce(token(), next));
+    assertEquals("invalid_grant", stolen.get("error").asText());
+    assertTrue(stolen.get("error_description").asText().contains("DPoP key"), stolen.toString());
+
     HttpResponse<String> again = client.postAsWithNonce(token(), refresh);
     assertEquals(400, again.statusCode());
     assertEquals("invalid_grant", json(again).get("error").asText());
     assertEquals(1, fake.as().refreshCount());
     assertEquals(1, fake.as().tokenCount());
-
-    // another DPoP key cannot use the new refresh token
-    TestClient other = new TestClient();
-    Map<String, String> stolen = Map.of("grant_type", "refresh_token", "refresh_token",
-        body.get("refresh_token").asText(), "client_id", clientId);
-    assertEquals("invalid_grant", json(other.postAsWithNonce(token(), stolen)).get("error").asText());
+    // the replay ended the session: the newer, never-used refresh token is dead too
+    assertEquals("invalid_grant", json(client.postAsWithNonce(token(), next)).get("error").asText());
+    assertEquals(1, fake.as().refreshCount());
   }
 
   @Test

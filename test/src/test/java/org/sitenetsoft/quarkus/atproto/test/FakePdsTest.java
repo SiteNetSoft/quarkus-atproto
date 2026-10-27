@@ -204,6 +204,38 @@ class FakePdsTest {
   }
 
   @Test
+  void blobScopeEnforcedEndToEnd() {
+    TestClient.Session s = client.login(fake, alice, "atproto blob:image/*");
+    HttpResponse<String> png = client.xrpc(s, xrpc("com.atproto.repo.uploadBlob"), "png", "image/png");
+    assertEquals(200, png.statusCode(), png.body());
+    HttpResponse<String> text = client.xrpc(s, xrpc("com.atproto.repo.uploadBlob"), "hello", "text/plain");
+    assertEquals(403, text.statusCode(), text.body());
+    assertEquals("InsufficientScope", json(text).get("error").asText());
+    assertEquals(1, fake.pds().blobs().size());
+  }
+
+  @Test
+  void refreshTokenReplayRevokesTheSessionsAccessTokens() {
+    TestClient.Session s = client.login(fake, alice, "atproto transition:generic");
+    String clientId = TestClient.devClientId(TestClient.REDIRECT, "atproto transition:generic");
+    java.util.Map<String, String> refresh = java.util.Map.of("grant_type", "refresh_token",
+        "refresh_token", s.refreshToken(), "client_id", clientId);
+    JsonNode refreshed = json(client.postAsWithNonce(fake.asUrl().resolve("/oauth/token"), refresh));
+    TestClient.Session s2 = new TestClient.Session(refreshed.get("access_token").asText(),
+        refreshed.get("refresh_token").asText(), refreshed);
+    URI url = xrpc("com.atproto.repo.createRecord");
+    assertEquals(200, client.xrpc(s2, url, create(null)).statusCode());
+
+    HttpResponse<String> replay = client.postAsWithNonce(fake.asUrl().resolve("/oauth/token"), refresh);
+    assertEquals("invalid_grant", json(replay).get("error").asText());
+
+    HttpResponse<String> after = client.xrpc(s2, url, create(null));
+    assertEquals(401, after.statusCode(), after.body());
+    assertTrue(after.headers().firstValue("WWW-Authenticate").orElse("").contains("invalid_token"));
+    assertTrue(after.body().contains("revoked"), after.body());
+  }
+
+  @Test
   void otherRepoIsForbidden() {
     FakeAccount bob = fake.account("bob.test");
     TestClient.Session s = client.login(fake, alice, "atproto transition:generic");

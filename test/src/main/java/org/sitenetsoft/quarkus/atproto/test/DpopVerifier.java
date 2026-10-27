@@ -18,7 +18,7 @@ import com.fasterxml.jackson.databind.JsonNode;
  * Verifies DPoP proofs (RFC 9449) the way the AT Protocol authorization server and PDS do, and owns one server's
  * {@code DPoP-Nonce}. A proof must be a compact JWS with {@code typ: dpop+jwt}, {@code alg: ES256} and a public
  * P-256 {@code jwk} (no private members) that verifies its signature; claims {@code jti} (never seen before),
- * {@code htm} (the request method), {@code htu} (the request URL without query and fragment), {@code iat} (within 60
+ * {@code htm} (exactly the request method, case-sensitive), {@code htu} (the request URL without query and fragment), {@code iat} (within 60
  * seconds of now), {@code ath} (base64url SHA-256 of the access token, required exactly when one is presented) and
  * {@code nonce} (this server's current nonce). Thread-safe.
  */
@@ -143,7 +143,7 @@ public final class DpopVerifier {
     if (jti == null || jti.isEmpty()) {
       throw invalid("missing jti");
     }
-    if (!method.equalsIgnoreCase(String.valueOf(jwt.text("htm")))) {
+    if (!method.equals(jwt.text("htm"))) {
       throw invalid("htm does not match the request method");
     }
     String htu = jwt.text("htu");

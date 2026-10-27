@@ -74,6 +74,8 @@ public final class FakePds {
   private final Map<String, byte[]> blobs = new LinkedHashMap<>();
   private final Map<String, String> commits = new LinkedHashMap<>();
 
+  private volatile List<String> authorizationServers;
+
   FakePds(FakeAtproto fake) {
     this.fake = fake;
   }
@@ -115,10 +117,19 @@ public final class FakePds {
     };
   }
 
+  /**
+   * The {@code authorization_servers} the protected-resource metadata lists instead of {@code [asUrl]} (until
+   * {@link FakeAtproto#clear()}).
+   */
+  public void authorizationServers(List<String> servers) {
+    authorizationServers = List.copyOf(servers);
+  }
+
   public Map<String, Object> protectedResource() {
     Map<String, Object> md = new LinkedHashMap<>();
     md.put("resource", fake.pdsUrl().toString());
-    md.put("authorization_servers", List.of(fake.asUrl().toString()));
+    List<String> servers = authorizationServers;
+    md.put("authorization_servers", servers != null ? servers : List.of(fake.asUrl().toString()));
     md.put("scopes_supported", List.of());
     md.put("bearer_methods_supported", List.of("header"));
     md.put("resource_documentation", "https://atproto.com");
@@ -482,6 +493,7 @@ public final class FakePds {
   }
 
   synchronized void clear() {
+    authorizationServers = null;
     records.clear();
     cids.clear();
     blobs.clear();

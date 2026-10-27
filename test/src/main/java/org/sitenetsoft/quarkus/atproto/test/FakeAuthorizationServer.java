@@ -158,6 +158,7 @@ public final class FakeAuthorizationServer {
   private volatile Duration accessTokenTtl = Duration.ofMinutes(15);
   private final List<String> rejectedScopePrefixes = new CopyOnWriteArrayList<>();
   private volatile FakeAccount signInAs;
+  private final Map<String, Optional<Object>> metadataOverrides = new ConcurrentHashMap<>();
 
   FakeAuthorizationServer(FakeAtproto fake) {
     this.fake = fake;
@@ -225,6 +226,13 @@ public final class FakeAuthorizationServer {
     md.put("request_uri_parameter_supported", true);
     md.put("require_request_uri_registration", true);
     md.put("protected_resources", List.of(fake.pdsUrl().toString()));
+    metadataOverrides.forEach((member, value) -> {
+      if (value.isPresent()) {
+        md.put(member, value.get());
+      } else {
+        md.remove(member);
+      }
+    });
     return md;
   }
 
@@ -687,6 +695,15 @@ public final class FakeAuthorizationServer {
 
   // ---- knobs and counters -----------------------------------------------------------------------------------------
 
+  /**
+   * Replaces a member of the {@code /.well-known/oauth-authorization-server} document with {@code value}, or removes
+   * it when {@code value} is {@code null} (until {@link FakeAtproto#clear()}). Only the served document changes: the
+   * endpoints keep their behaviour.
+   */
+  public void overrideMetadata(String member, Object value) {
+    metadataOverrides.put(member, Optional.ofNullable(value));
+  }
+
   /** Callbacks carry a wrong {@code iss} (until {@link FakeAtproto#clear()}). */
   public void wrongIss() {
     wrongIss = true;
@@ -769,6 +786,7 @@ public final class FakeAuthorizationServer {
     accessTokenTtl = Duration.ofMinutes(15);
     rejectedScopePrefixes.clear();
     signInAs = null;
+    metadataOverrides.clear();
     dpop.reset();
     parCount.set(0);
     tokenCount.set(0);

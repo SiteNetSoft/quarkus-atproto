@@ -33,6 +33,7 @@ public class AccountLinks {
 
     private ReactiveAtprotoAccountLinks reactive;
     private AtprotoAccountLinks blocking;
+    private boolean inline;
 
     @PostConstruct
     void init() {
@@ -45,12 +46,18 @@ public class AccountLinks {
             AtprotoAccountLinks b = appBlocking ? blockingStore.get() : ClientProxy.unwrap(blockingStore.get());
             blocking = b;
             reactive = new Offloading(b, !appBlocking);
+            inline = !appBlocking;
         }
     }
 
     /** The link store for reactive callers. */
     public ReactiveAtprotoAccountLinks links() {
         return reactive;
+    }
+
+    /** Whether the link store is the in-memory default: its blocking view never blocks (fine on the event loop). */
+    public boolean inline() {
+        return inline;
     }
 
     /** The link store for blocking callers (never on the event loop, unless it is the in-memory default). */

@@ -5,7 +5,7 @@ import '@vaadin/button';
 
 /**
  * AT Protocol OAuth: client type, client_id, the served client metadata, active sessions (no tokens) and a sign-in
- * box that opens the login endpoint in a new tab.
+ * box that posts to the login endpoint in a new tab.
  */
 export class QwcAtprotoOauth extends LitElement {
     jsonRpc = new JsonRpc(this);
@@ -46,6 +46,7 @@ export class QwcAtprotoOauth extends LitElement {
     }
 
     _load() {
+        this._error = null;
         this.jsonRpc.info()
             .then(r => { this._info = r.result; })
             .catch(e => { this._error = (e && e.error && e.error.message) || 'info() failed'; });
@@ -111,7 +112,19 @@ export class QwcAtprotoOauth extends LitElement {
         if (!i || !this._handle) {
             return;
         }
-        window.open(i.loginPath + '?handle=' + encodeURIComponent(this._handle.trim()), '_blank', 'noopener');
+        // the login endpoint only takes a same-origin POST (login CSRF protection): submit a form into a new tab
+        const form = document.createElement('form');
+        form.method = 'post';
+        form.action = i.loginPath;
+        form.target = '_blank';
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'handle';
+        input.value = this._handle.trim();
+        form.appendChild(input);
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
     }
 }
 customElements.define('qwc-atproto-oauth', QwcAtprotoOauth);

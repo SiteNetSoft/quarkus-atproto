@@ -22,6 +22,7 @@ import org.sitenetsoft.multikey.KeyPairs;
 import org.sitenetsoft.multikey.KeyType;
 import org.sitenetsoft.quarkus.atproto.identity.AtprotoIdentity;
 import org.sitenetsoft.quarkus.atproto.oauth.OAuthConfig;
+import org.sitenetsoft.quarkus.atproto.oauth.Origins;
 import org.sitenetsoft.quarkus.atproto.oauth.client.ClientIdentity;
 import org.sitenetsoft.quarkus.atproto.oauth.discovery.DiscoveredServer;
 import org.sitenetsoft.quarkus.atproto.oauth.discovery.Discovery;
@@ -33,10 +34,13 @@ import io.quarkus.security.identity.IdentityProviderManager;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.Context;
 import io.vertx.core.Handler;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.RoutingContext;
 
 /**
- * {@code GET|POST {login-path}?handle=<handle | DID | server URL>[&redirect=<local path>]}: discovery, a new DPoP key,
+ * {@code POST {login-path}} (form {@code handle=<handle | DID | server URL>}, optional {@code redirect=<local
+ * path>}), <b>same-origin only</b> ({@link #crossSite}: 403 otherwise; {@code GET}: 405), so another site cannot start
+ * a sign-in in the user's browser (login CSRF: a forced sign-in to the attacker's account): discovery, a new DPoP key,
  * PKCE and {@code state}, a pushed authorization request (with the fallback scope once on {@code invalid_scope} when
  * configured), the pending entry (bound to this browser by a binding cookie, see {@link SessionCookie}), then 302 to
  * the authorization endpoint with {@code client_id} and {@code request_uri} only.
@@ -79,6 +83,17 @@ public class LoginHandler implements Handler<RoutingContext> {
 
     @Override
     public void handle(RoutingContext ctx) {
+        if (ctx.request().method() != HttpMethod.POST) {
+            // a GET is a cross-site top-level navigation away from a forced sign-in (login CSRF)
+            ctx.response().setStatusCode(405).putHeader("Allow", "POST").putHeader("Cache-Control", "no-store")
+                    .end("Start the sign-in with a POST from this site's form");
+            return;
+        }
+        Optional<String> crossSite = crossSite(ctx);
+        if (crossSite.isPresent()) {
+            Responses.fail(ctx, config, "login", new LoginFailure(403, "cross_site_request", crossSite.get()));
+            return;
+        }
         Context context = ctx.vertx().getOrCreateContext();
         // the binding cookie goes out with the redirect only (not with a refusal)
         String binding = cookie.newBinding();
@@ -94,6 +109,48 @@ public class LoginHandler implements Handler<RoutingContext> {
                             Responses.redirect(ctx, location);
                         }),
                         error -> Responses.on(context, () -> Responses.fail(ctx, config, "login", error)));
+    }
+
+    /**
+     * Why the request is not same-origin, or empty when it is: {@code Sec-Fetch-Site} must be {@code same-origin} when
+     * present; otherwise {@code Origin} must be this application's origin (of {@code client-base-url} for a
+     * confidential client, of the request's own host for the development client); neither header: refused.
+     */
+    Optional<String> crossSite(RoutingContext ctx) {
+        String fetchSite = ctx.request().getHeader("Sec-Fetch-Site");
+        if (fetchSite != null) {
+            return "same-origin".equalsIgnoreCase(fetchSite.strip()) ? Optional.empty()
+                    : Optional.of("The sign-in must be started from this site (Sec-Fetch-Site: "
+                            + AuthServerClient.abbreviate(fetchSite) + ")");
+        }
+        String origin = ctx.request().getHeader("Origin");
+        if (origin == null) {
+            return Optional.of("The sign-in must be started from this site (no Origin or Sec-Fetch-Site header)");
+        }
+        String expected;
+        try {
+            if (client.confidential() && client.baseUrl().isPresent()) {
+                expected = Origins.of(client.baseUrl().get());
+            } else {
+                io.vertx.core.net.HostAndPort a = ctx.request().authority();
+                if (a == null) {
+                    throw new IllegalArgumentException("no Host");
+                }
+                expected = Origins.of(URI.create(ctx.request().scheme() + "://" + a.host()
+                        + (a.port() > 0 ? ":" + a.port() : "")));
+            }
+        } catch (IllegalArgumentException e) {
+            return Optional.of("The sign-in must be started from this site (unknown request origin)");
+        }
+        try {
+            if (Origins.of(URI.create(origin.strip())).equals(expected)) {
+                return Optional.empty();
+            }
+        } catch (IllegalArgumentException e) {
+            // "null" or garbage: refused below
+        }
+        return Optional.of("The sign-in must be started from this site (Origin " + AuthServerClient.abbreviate(origin)
+                + ")");
     }
 
     private Uni<String> start(Map<String, String> params, String browserBinding, Optional<String> appPrincipal) {

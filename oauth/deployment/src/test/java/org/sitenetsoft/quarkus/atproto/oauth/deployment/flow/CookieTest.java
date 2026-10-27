@@ -53,7 +53,8 @@ public class CookieTest {
         AtprotoSession s = sessions.findByDid(ALICE.did()).get(0);
         assertFalse(cookie.contains(s.id()));
         // a public route still answers with a bad cookie (an unusable cookie is no identity, not an error)
-        assertEquals(302, Browser.get("/atproto/login?handle=" + HANDLE, "garbage").statusCode());
+        assertEquals(302, Browser.sameOrigin(io.restassured.RestAssured.given().redirects().follow(false))
+                .cookie(Browser.COOKIE, "garbage").formParam("handle", HANDLE).post("/atproto/login").statusCode());
     }
 
     @Test

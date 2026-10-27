@@ -40,6 +40,7 @@ public class SessionStores {
     private AtprotoSessionStore blockingSessions;
     private PendingAuthorizationStore pending;
     private boolean pendingInline;
+    private boolean sessionsInline;
 
     @PostConstruct
     void init() {
@@ -52,6 +53,7 @@ public class SessionStores {
             AtprotoSessionStore b = appBlocking ? blockingStore.get() : ClientProxy.unwrap(blockingStore.get());
             blockingSessions = b;
             sessions = new OffloadingStore(b, !appBlocking);
+            sessionsInline = !appBlocking;
         }
         pendingInline = pendingStore.getHandle().getBean().isDefaultBean();
         pending = pendingInline ? ClientProxy.unwrap(pendingStore.get()) : pendingStore.get();
@@ -60,6 +62,11 @@ public class SessionStores {
     /** The session store for reactive callers. */
     public ReactiveAtprotoSessionStore sessions() {
         return sessions;
+    }
+
+    /** Whether the session store is the in-memory default: its blocking view never blocks (fine on the event loop). */
+    public boolean sessionsInline() {
+        return sessionsInline;
     }
 
     /** The session store for blocking callers (never on the event loop). */

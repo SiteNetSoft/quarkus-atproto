@@ -98,7 +98,7 @@ public class LoginFlowTest {
 
     @Test
     void formPostStartsTheLogin() {
-        Response r = given().redirects().follow(false).contentType("application/x-www-form-urlencoded")
+        Response r = Browser.sameOrigin(given().redirects().follow(false))
                 .formParam("handle", HANDLE).formParam("redirect", "/posted").post("/atproto/login");
         Response cb = Browser.callback(Browser.authorize(r));
         assertEquals(302, cb.statusCode(), cb.body().asString());
@@ -164,7 +164,7 @@ public class LoginFlowTest {
         assertEquals(400, r.statusCode());
         assertTrue(r.body().asString().contains("No AT Protocol account found for this handle"), r.body().asString());
         assertEquals(400, Browser.startLogin("not a handle").statusCode());
-        assertEquals(400, given().redirects().follow(false).get("/atproto/login").statusCode());
+        assertEquals(400, Browser.sameOrigin(given().redirects().follow(false)).post("/atproto/login").statusCode());
     }
 
     @Test
@@ -202,5 +202,58 @@ public class LoginFlowTest {
 
     private static io.restassured.specification.RequestSpecification given() {
         return io.restassured.RestAssured.given();
+    }
+
+    @Test
+    void getIsRefused() {
+        Response r = given().redirects().follow(false).queryParam("handle", HANDLE).get("/atproto/login");
+        assertEquals(405, r.statusCode());
+        assertEquals("POST", r.header("Allow"));
+        assertNull(Browser.setCookie(r, Browser.BINDING));
+        assertEquals(0, FAKE.as().parCount());
+    }
+
+    @Test
+    void crossSitePostRefused() {
+        Response r = given().redirects().follow(false).header("Sec-Fetch-Site", "cross-site")
+                .contentType("application/x-www-form-urlencoded").formParam("handle", HANDLE).post("/atproto/login");
+        assertEquals(403, r.statusCode(), r.body().asString());
+        assertNull(Browser.setCookie(r, Browser.BINDING));
+        // same-site (another origin of the same site) is not same-origin either
+        assertEquals(403, given().redirects().follow(false).header("Sec-Fetch-Site", "same-site")
+                .contentType("application/x-www-form-urlencoded").formParam("handle", HANDLE).post("/atproto/login")
+                .statusCode());
+        assertEquals(0, FAKE.as().parCount());
+    }
+
+    @Test
+    void foreignOriginRefused() {
+        Response r = given().redirects().follow(false).header("Origin", "https://evil.example")
+                .contentType("application/x-www-form-urlencoded").formParam("handle", HANDLE).post("/atproto/login");
+        assertEquals(403, r.statusCode(), r.body().asString());
+        assertNull(Browser.setCookie(r, Browser.BINDING));
+        assertEquals(403, given().redirects().follow(false).header("Origin", "null")
+                .contentType("application/x-www-form-urlencoded").formParam("handle", HANDLE).post("/atproto/login")
+                .statusCode());
+        assertEquals(0, FAKE.as().parCount());
+    }
+
+    @Test
+    void noOriginHeadersRefused() {
+        Response r = given().redirects().follow(false).contentType("application/x-www-form-urlencoded")
+                .formParam("handle", HANDLE).post("/atproto/login");
+        assertEquals(403, r.statusCode(), r.body().asString());
+        assertNull(Browser.setCookie(r, Browser.BINDING));
+        assertEquals(0, FAKE.as().parCount());
+    }
+
+    @Test
+    void ownOriginAccepted() {
+        // an older browser without Fetch Metadata: the Origin header of this application (the development client:
+        // the request's own host)
+        Response r = given().redirects().follow(false).header("Origin", "http://localhost:" + Browser.port())
+                .contentType("application/x-www-form-urlencoded").formParam("handle", HANDLE).post("/atproto/login");
+        assertEquals(302, r.statusCode(), r.body().asString());
+        assertEquals(302, Browser.callback(Browser.authorize(r)).statusCode());
     }
 }

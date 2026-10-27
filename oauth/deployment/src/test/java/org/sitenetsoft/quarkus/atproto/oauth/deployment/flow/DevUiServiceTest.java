@@ -78,5 +78,10 @@ public class DevUiServiceTest {
                 String.valueOf(s.dpopPrivateJwk().get("d")))) {
             assertFalse(all.contains(secret), "a secret reached the Dev UI");
         }
+        // a session past session.max-age is not active
+        sessions.save(new AtprotoSession(s.id(), s.did(), s.handle(), s.pds(), s.issuer(), s.grantedScope(),
+                s.accessToken(), s.refreshToken(), s.accessExpiry(), s.dpopPrivateJwk(), s.nonces(),
+                java.time.Instant.now().minusSeconds(30L * 24 * 3600)));
+        assertTrue(service.sessions().isEmpty());
     }
 }

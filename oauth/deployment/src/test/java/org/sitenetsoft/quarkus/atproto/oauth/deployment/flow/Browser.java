@@ -41,15 +41,21 @@ final class Browser {
         return ConfigProvider.getConfig().getValue("quarkus.http.test-port", Integer.class);
     }
 
-    /** {@code GET /atproto/login?handle=...}, not followed. */
+    /** {@code POST /atproto/login} (form {@code handle}) from this site's own page, not followed. */
     static Response startLogin(String handle) {
-        return given().redirects().follow(false).queryParam("handle", handle).get("/atproto/login");
+        return sameOrigin(given().redirects().follow(false)).formParam("handle", handle).post("/atproto/login");
     }
 
-    /** {@code GET /atproto/login?handle=...&redirect=...}, not followed. */
+    /** A request as a browser sends it from one of the application's own pages. */
+    static io.restassured.specification.RequestSpecification sameOrigin(
+            io.restassured.specification.RequestSpecification spec) {
+        return spec.header("Sec-Fetch-Site", "same-origin").contentType("application/x-www-form-urlencoded");
+    }
+
+    /** {@code POST /atproto/login} (form {@code handle}, {@code redirect}) from this site, not followed. */
     static Response startLogin(String handle, String redirect) {
-        return given().redirects().follow(false).queryParam("handle", handle).queryParam("redirect", redirect)
-                .get("/atproto/login");
+        return sameOrigin(given().redirects().follow(false)).formParam("handle", handle)
+                .formParam("redirect", redirect).post("/atproto/login");
     }
 
     /** Login started, sent to the authorization server: the URL it redirects back to (the callback). */

@@ -33,7 +33,7 @@ public class OAuthRecorder {
 
     /**
      * A route at the path configured at runtime for {@code endpoint}: {@code GET} (metadata, JWKS, callback),
-     * {@code GET} and {@code POST} (login), {@code POST} (logout, unlink).
+     * {@code GET} and {@code POST} (login: the handler answers {@code GET} with 405), {@code POST} (logout, unlink).
      */
     public Function<Router, Route> route(Endpoint endpoint) {
         return router -> {

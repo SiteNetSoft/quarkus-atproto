@@ -47,7 +47,8 @@ final class OAuthTestSupport {
     private static QuarkusUnitTest base(FakeAtproto fake, List<String> handles, Class<?> app, Class<?>... extra) {
         QuarkusUnitTest test = new QuarkusUnitTest()
                 .setArchiveProducer(() -> ShrinkWrap.create(JavaArchive.class)
-                        .addClasses(TestTxtResolver.class, app, Browser.class, OAuthTestSupport.class)
+                        .addClasses(TestTxtResolver.class, app, Browser.class, LinkBrowser.class,
+                                OAuthTestSupport.class)
                         .addClasses(extra))
                 .overrideConfigKey("quarkus.safe-fetch.https-only", "false")
                 .overrideConfigKey("quarkus.safe-fetch.allow-private-addresses", "true")

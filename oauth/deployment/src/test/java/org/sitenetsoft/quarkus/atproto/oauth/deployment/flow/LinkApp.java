@@ -10,6 +10,7 @@ import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
 
 import org.sitenetsoft.atproto.syntax.Did;
+import org.sitenetsoft.quarkus.atproto.oauth.AtprotoSessionExpired;
 import org.sitenetsoft.quarkus.atproto.oauth.security.AtprotoUser;
 import org.sitenetsoft.quarkus.atproto.xrpc.RecordResult;
 
@@ -41,6 +42,8 @@ public class LinkApp {
     public Response linked() {
         try {
             return Response.ok(user.did().value() + " " + user.handle().value()).build();
+        } catch (AtprotoSessionExpired e) {
+            return Response.status(410).entity(e.getMessage()).build();
         } catch (IllegalStateException e) {
             return Response.status(409).entity(e.getMessage()).build();
         }
@@ -55,6 +58,8 @@ public class LinkApp {
             RecordResult r = u.records().create(DOCUMENT, Map.of("site", "https://example.com",
                     "title", title == null ? "Hello" : title, "publishedAt", "2026-10-27T10:00:00.000Z"));
             return Response.ok(r.uri().toString()).build();
+        } catch (AtprotoSessionExpired e) {
+            return Response.status(410).entity(e.getMessage()).build();
         } catch (IllegalStateException e) {
             return Response.status(409).entity(e.getMessage()).build();
         }

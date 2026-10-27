@@ -2,9 +2,14 @@
 
 - Modes (`quarkus.atproto.oauth.mode`, runtime): `login` (default; AT Protocol OAuth is the app's sign-in, principal =
   DID, cookie session, `POST /atproto/logout`) or `link` (the app's own mechanism signs users in; `/atproto/login`
-  needs that identity, else 401; the callback links app principal → DID → session and must be made by the same app
+  needs that identity, else 401 (and same-origin POST, see below); the callback links app principal → DID → session and must be made by the same app
   user; no cookie, the atproto mechanism adds no identity; `POST /atproto/unlink[?did=]` → 204/400/401/404). Pick
   `link` when the app has its own accounts (form/OIDC); QuarkPress uses `link`.
+- Starting a sign-in: only `POST {login-path}` (form `handle`, optional `redirect`) from the app's own page;
+  same-origin required (`Sec-Fetch-Site: same-origin`, else `Origin` = the app's origin; neither → 403); `GET` → 405.
+  Never link to the login endpoint with `<a href>`: render a form.
+- Reactive endpoints in link mode with an app store: `user.reactiveRecordsAsync()` / `user.didAsync()` /
+  `user.resolve().map(u -> ...)`; the sync accessors throw on the event loop instead of blocking.
 - In a request: `@Inject AtprotoUser user; user.records().create(Nsid, Map|record)` (blocking; `reactiveRecords()`
   for Mutiny), `user.did()/handle()/pds()/scope()/xrpc()`. Link mode: `did()` throws
   `IllegalStateException("no linked AT Protocol account")` or `("several linked accounts; use forDid")`;

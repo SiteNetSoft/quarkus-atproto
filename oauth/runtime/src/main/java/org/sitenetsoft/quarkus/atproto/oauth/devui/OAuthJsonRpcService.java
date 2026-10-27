@@ -52,7 +52,7 @@ public class OAuthJsonRpcService {
     }
 
     /**
-     * The active sessions, newest first (in-memory store only: an application's store is not enumerable): DID,
+     * The active sessions (within {@code session.max-age}), newest first (in-memory store only: an application's store is not enumerable): DID,
      * handle, PDS, scope, access token expiry, sign-in time.
      */
     public List<Map<String, Object>> sessions() {
@@ -61,7 +61,8 @@ public class OAuthJsonRpcService {
             return List.of();
         }
         List<Map<String, Object>> out = new ArrayList<>();
-        store.all().stream().sorted(Comparator.comparing(AtprotoSession::created).reversed()).limit(LIMIT)
+        java.time.Instant now = java.time.Instant.now();
+        store.all().stream().filter(s -> s.created().plus(config.session().maxAge()).isAfter(now)).sorted(Comparator.comparing(AtprotoSession::created).reversed()).limit(LIMIT)
                 .forEach(s -> {
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("did", s.did().value());

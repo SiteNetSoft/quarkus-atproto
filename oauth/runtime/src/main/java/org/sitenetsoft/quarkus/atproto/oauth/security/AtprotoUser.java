@@ -3,6 +3,7 @@ package org.sitenetsoft.quarkus.atproto.oauth.security;
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
+import java.time.Instant;
 
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
@@ -26,6 +27,8 @@ import org.sitenetsoft.quarkus.atproto.xrpc.api.XrpcAuth;
 import org.sitenetsoft.quarkus.atproto.xrpc.api.XrpcClient;
 
 import io.quarkus.security.identity.SecurityIdentity;
+import io.smallrye.mutiny.Uni;
+import io.vertx.core.Context;
 
 /**
  * The AT Protocol account of the current request. {@link #records()} writes to the account's repository on its PDS
@@ -38,7 +41,9 @@ import io.quarkus.security.identity.SecurityIdentity;
  * {@code IllegalStateException("several linked accounts; use forDid")} when there are several; {@link #forDid}
  * picks one of them. When the link's session has ended (revoked, refresh refused) the account methods other than
  * {@link #did()} throw {@link AtprotoSessionExpired}: link the account again. Resolving the link reads the link and
- * session stores (blocking for an application store: call from a worker thread).</li>
+ * session stores once per request: with an application store, on the event loop call {@link #resolve()} (or
+ * {@link #didAsync()}, {@link #reactiveRecordsAsync()}) first; the synchronous accessors there fail fast with an
+ * {@link IllegalStateException} instead of blocking. A session past {@code session.max-age} counts as ended.</li>
  * </ul>
  */
 @RequestScoped
@@ -63,11 +68,65 @@ public class AtprotoUser {
 
     /** {@code link} mode views made by {@link #forDid}: the chosen account. */
     private Did chosen;
-    private View view;
-    private DpopXrpcAuth auth;
+    /** Per request, loaded once: the linked accounts, the account's session view or why there is none. */
+    private volatile List<Did> linked;
+    private volatile View view;
+    private volatile AtprotoSessionExpired viewFailure;
+    private volatile DpopXrpcAuth auth;
 
     /** The account's session as this request sees it. */
     private record View(String sessionId, Did did, Handle handle, URI pds, String scope) {
+    }
+
+    /**
+     * Loads what this request needs from the link and session stores without blocking (through their reactive
+     * views), and caches it for the request; afterwards every accessor answers from memory, so they are safe on the
+     * event loop. Needed only in {@code link} mode with an application store, before using the synchronous accessors
+     * on the event loop. Never fails for a missing or ended session (the accessors that need it throw
+     * {@link AtprotoSessionExpired}).
+     */
+    public Uni<AtprotoUser> resolve() {
+        return Uni.createFrom().deferred(() -> {
+            if (!linkMode()) {
+                view();
+                return Uni.createFrom().item(this);
+            }
+            if (view != null || viewFailure != null) {
+                return Uni.createFrom().item(this);
+            }
+            String principal = appPrincipal();
+            Uni<List<Did>> accounts = linked != null ? Uni.createFrom().item(linked)
+                    : links.links().findByPrincipal(principal).invoke(l -> linked = List.copyOf(l));
+            return accounts.chain(l -> {
+                Did target = chosen != null ? chosen : l.size() == 1 ? l.get(0) : null;
+                if (target == null) {
+                    return Uni.createFrom().item(this); // none or several: did() says which
+                }
+                return links.links().sessionFor(principal, target)
+                        .chain(id -> id.isEmpty() ? Uni.createFrom().item(Optional.<AtprotoSession> empty())
+                                : stores.sessions().find(id.get()))
+                        .chain(found -> {
+                            if (found.isPresent() && !live(found.get())) {
+                                return stores.sessions().delete(found.get().id()).map(v -> Optional.<AtprotoSession> empty());
+                            }
+                            return Uni.createFrom().item(found);
+                        })
+                        .map(found -> {
+                            setView(target, found);
+                            return this;
+                        });
+            });
+        });
+    }
+
+    /** {@link #did()} without blocking ({@link #resolve()} first). */
+    public Uni<Did> didAsync() {
+        return resolve().map(AtprotoUser::did);
+    }
+
+    /** {@link #reactiveRecords()} without blocking ({@link #resolve()} first). */
+    public Uni<ReactiveAtprotoRecords> reactiveRecordsAsync() {
+        return resolve().map(AtprotoUser::reactiveRecords);
     }
 
     public Did did() {
@@ -77,14 +136,14 @@ public class AtprotoUser {
         if (chosen != null) {
             return chosen;
         }
-        List<Did> linked = linked();
-        if (linked.isEmpty()) {
+        List<Did> accounts = linked();
+        if (accounts.isEmpty()) {
             throw new IllegalStateException("no linked AT Protocol account");
         }
-        if (linked.size() > 1) {
+        if (accounts.size() > 1) {
             throw new IllegalStateException("several linked accounts; use forDid");
         }
-        return linked.get(0);
+        return accounts.get(0);
     }
 
     /**
@@ -112,6 +171,7 @@ public class AtprotoUser {
         v.config = config;
         v.links = links;
         v.chosen = did;
+        v.linked = linked;
         return v;
     }
 
@@ -147,38 +207,79 @@ public class AtprotoUser {
         return SessionXrpc.client(xrpcClient, auth());
     }
 
-    private synchronized DpopXrpcAuth auth() {
-        if (auth == null) {
+    private DpopXrpcAuth auth() {
+        DpopXrpcAuth a = auth;
+        if (a == null) {
             View v = view();
-            auth = new DpopXrpcAuth(v.sessionId(), v.pds(), stores, refresher, nonces);
+            a = new DpopXrpcAuth(v.sessionId(), v.pds(), stores, refresher, nonces);
+            auth = a;
         }
-        return auth;
+        return a;
     }
 
     private boolean linkMode() {
         return config.mode() == OAuthConfig.Mode.LINK;
     }
 
-    private synchronized View view() {
-        if (view == null) {
-            view = linkMode() ? linkedView() : new View(attribute(AtprotoIdentityProvider.SESSION_ID),
-                    Did.parse(principal()), Handle.parse(attribute(AtprotoIdentityProvider.HANDLE)),
-                    URI.create(attribute(AtprotoIdentityProvider.PDS)), attribute(AtprotoIdentityProvider.SCOPE));
+    private View view() {
+        View v = view;
+        if (v != null) {
+            return v;
         }
-        return view;
+        if (viewFailure != null) {
+            throw viewFailure;
+        }
+        if (!linkMode()) {
+            v = new View(attribute(AtprotoIdentityProvider.SESSION_ID), Did.parse(principal()),
+                    Handle.parse(attribute(AtprotoIdentityProvider.HANDLE)),
+                    URI.create(attribute(AtprotoIdentityProvider.PDS)), attribute(AtprotoIdentityProvider.SCOPE));
+            view = v;
+            return v;
+        }
+        Did did = did();
+        guardEventLoop(links.inline() && stores.sessionsInline());
+        Optional<AtprotoSession> found = links.blockingLinks().sessionFor(appPrincipal(), did)
+                .flatMap(id -> stores.blockingSessions().find(id));
+        if (found.isPresent() && !live(found.get())) {
+            stores.blockingSessions().delete(found.get().id());
+            found = Optional.empty();
+        }
+        setView(did, found);
+        return view();
     }
 
-    private View linkedView() {
-        Did did = did();
-        Optional<AtprotoSession> session = links.blockingLinks().sessionFor(appPrincipal(), did)
-                .flatMap(id -> stores.blockingSessions().find(id));
-        AtprotoSession s = session.orElseThrow(() -> new AtprotoSessionExpired("The AT Protocol session of " + did
-                + " has ended; link the account again"));
-        return new View(s.id(), s.did(), s.handle(), s.pds(), s.grantedScope());
+    private void setView(Did did, Optional<AtprotoSession> session) {
+        if (session.isPresent()) {
+            AtprotoSession s = session.get();
+            view = new View(s.id(), s.did(), s.handle(), s.pds(), s.grantedScope());
+        } else {
+            viewFailure = new AtprotoSessionExpired("The AT Protocol session of " + did
+                    + " has ended; link the account again");
+        }
+    }
+
+    /** Within {@code session.max-age} (as the identity provider and {@code AtprotoSessions} judge it). */
+    private boolean live(AtprotoSession s) {
+        return s.created().plus(config.session().maxAge()).isAfter(Instant.now());
     }
 
     private List<Did> linked() {
-        return links.blockingLinks().findByPrincipal(appPrincipal());
+        List<Did> l = linked;
+        if (l == null) {
+            guardEventLoop(links.inline());
+            l = List.copyOf(links.blockingLinks().findByPrincipal(appPrincipal()));
+            linked = l;
+        }
+        return l;
+    }
+
+    /** An application store must not be read synchronously on the event loop: fail fast with the way out. */
+    private static void guardEventLoop(boolean inlineStores) {
+        if (!inlineStores && Context.isOnEventLoopThread()) {
+            throw new IllegalStateException("AtprotoUser in link mode would read the application's link or session "
+                    + "store on the event loop: call resolve(), didAsync() or reactiveRecordsAsync() first, or run "
+                    + "the endpoint on a worker thread (@Blocking)");
+        }
     }
 
     private String appPrincipal() {

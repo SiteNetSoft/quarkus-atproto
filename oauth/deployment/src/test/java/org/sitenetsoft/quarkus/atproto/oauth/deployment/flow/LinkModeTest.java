@@ -18,6 +18,7 @@ import org.sitenetsoft.atproto.syntax.AtUri;
 import org.sitenetsoft.quarkus.atproto.oauth.events.AtprotoLoggedIn;
 import org.sitenetsoft.quarkus.atproto.oauth.events.AtprotoLoggedOut;
 import org.sitenetsoft.quarkus.atproto.oauth.link.AtprotoAccountLinks;
+import org.sitenetsoft.quarkus.atproto.oauth.session.AtprotoSession;
 import org.sitenetsoft.quarkus.atproto.oauth.session.AtprotoSessionStore;
 import org.sitenetsoft.quarkus.atproto.test.FakeAccount;
 import org.sitenetsoft.quarkus.atproto.test.FakeAtproto;
@@ -64,28 +65,19 @@ public class LinkModeTest {
     }
 
     static RequestSpecification as(String user) {
-        RequestSpecification spec = given().redirects().follow(false);
-        if (user == null) {
-            return spec;
-        }
-        return spec.auth().preemptive().basic(user, user.equals(ANN) ? OAuthTestSupport.ANN_PASSWORD
-                : OAuthTestSupport.BEN_PASSWORD);
+        return LinkBrowser.as(user);
     }
 
     static Response startLink(String user, String handle) {
-        return as(user).queryParam("handle", handle).get("/atproto/login");
+        return LinkBrowser.startLink(user, handle);
     }
 
-    /** The callback in the browser that started the login (its binding cookie), signed in to the app as {@code user}. */
     static Response callback(String user, URI callbackUrl) {
-        String local = "http://127.0.0.1:" + Browser.port() + callbackUrl.getRawPath() + "?" + callbackUrl.getRawQuery();
-        return as(user).urlEncodingEnabled(false).cookie(Browser.BINDING, Browser.binding(callbackUrl)).get(local);
+        return LinkBrowser.callback(user, callbackUrl);
     }
 
     static Response link(String user, String handle) {
-        Response cb = callback(user, Browser.authorize(startLink(user, handle)));
-        assertEquals(302, cb.statusCode(), () -> "callback: " + cb.statusCode() + " " + cb.body().asString());
-        return cb;
+        return LinkBrowser.link(user, handle);
     }
 
     @Test
@@ -93,9 +85,16 @@ public class LinkModeTest {
         Response r = startLink(null, HANDLE);
         assertEquals(401, r.statusCode(), r.body().asString());
         assertEquals(0, FAKE.as().parCount());
+        // a signed-in user's browser sent cross-site (forced link of the attacker's account): refused
+        Response forced = as(ANN).header("Sec-Fetch-Site", "cross-site").contentType("application/x-www-form-urlencoded")
+                .formParam("handle", BOB_HANDLE).post("/atproto/login");
+        assertEquals(403, forced.statusCode(), forced.body().asString());
+        assertNull(Browser.setCookie(forced, Browser.BINDING));
+        assertEquals(405, as(ANN).queryParam("handle", BOB_HANDLE).get("/atproto/login").statusCode());
+        assertEquals(0, FAKE.as().parCount());
         // a wrong password is no identity either
-        Response wrong = given().redirects().follow(false).auth().preemptive().basic(ANN, "nope")
-                .queryParam("handle", HANDLE).get("/atproto/login");
+        Response wrong = Browser.sameOrigin(given().redirects().follow(false).auth().preemptive().basic(ANN, "nope"))
+                .formParam("handle", HANDLE).post("/atproto/login");
         assertEquals(401, wrong.statusCode());
         assertEquals(0, FAKE.as().parCount());
     }
@@ -197,5 +196,20 @@ public class LinkModeTest {
         assertTrue(!first.equals(second));
         assertTrue(sessions.find(first).isEmpty(), "the replaced session is deleted");
         assertEquals(1, sessions.findByDid(ALICE.did()).size());
+    }
+
+    @Test
+    void maxAgeAppliesToLinkedSession() {
+        link(ANN, HANDLE);
+        AtprotoSession s = sessions.findByDid(ALICE.did()).get(0);
+        sessions.save(new AtprotoSession(s.id(), s.did(), s.handle(), s.pds(), s.issuer(), s.grantedScope(),
+                s.accessToken(), s.refreshToken(), s.accessExpiry(), s.dpopPrivateJwk(), s.nonces(),
+                java.time.Instant.now().minusSeconds(30L * 24 * 3600)));
+        Response r = as(ANN).get("/linked");
+        assertEquals(410, r.statusCode(), r.body().asString());
+        assertTrue(r.body().asString().contains("link the account again"), r.body().asString());
+        assertTrue(sessions.findByDid(ALICE.did()).isEmpty(), "the session past max-age is deleted");
+        assertEquals(410, as(ANN).post("/publish").statusCode());
+        assertTrue(FAKE.pds().records().isEmpty());
     }
 }

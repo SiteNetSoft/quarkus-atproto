@@ -69,4 +69,17 @@ public class ConfidentialLoginTest {
                     r.body());
         }
     }
+
+    @Test
+    void originMustBeTheClientBaseUrl() {
+        // without Fetch Metadata the Origin must be client-base-url's origin, not whatever host the request names
+        io.restassured.response.Response own = io.restassured.RestAssured.given().redirects().follow(false)
+                .header("Origin", BASE).contentType("application/x-www-form-urlencoded").formParam("handle", HANDLE)
+                .post("/atproto/login");
+        assertEquals(302, own.statusCode(), own.body().asString());
+        io.restassured.response.Response local = io.restassured.RestAssured.given().redirects().follow(false)
+                .header("Origin", "http://localhost:" + Browser.port()).contentType("application/x-www-form-urlencoded")
+                .formParam("handle", HANDLE).post("/atproto/login");
+        assertEquals(403, local.statusCode(), local.body().asString());
+    }
 }

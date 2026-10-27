@@ -40,6 +40,7 @@ class ValidatorTest {
     static final QuarkusUnitTest TEST = new QuarkusUnitTest()
             .withApplicationRoot(jar -> {
                 jar.addAsResource("lexicons/org/example/note.json", "META-INF/atproto/lexicons/org/example/note.json");
+                jar.addAsResource("validator/misc.json", "META-INF/atproto/lexicons/org/example/misc.json");
                 RECORDS.forEach(r -> jar.addAsResource("records/" + r));
             });
 
@@ -322,6 +323,62 @@ class ValidatorTest {
         ObjectNode ok = note();
         ok.set("about", document());
         assertValid(validator.validate(NOTE, ok));
+    }
+
+    static final Nsid MISC = Nsid.parse("org.example.misc");
+
+    ObjectNode misc() {
+        return mapper.createObjectNode().put("$type", "org.example.misc");
+    }
+
+    @Test
+    void refOnlyCycleIsAProblemNotAStackOverflow() {
+        ObjectNode m = misc();
+        m.putObject("loop").put("x", 1);
+        List<ValidationProblem> problems = validator.validate(MISC, m);
+        assertEquals(1, problems.size(), problems::toString);
+        assertProblemAt(problems, "/loop", "cycle");
+    }
+
+    @Test
+    void recursiveDataStillValidates() {
+        ObjectNode m = misc();
+        ObjectNode root = m.putObject("tree").put("name", "root");
+        ObjectNode child = root.putArray("children").addObject().put("name", "child");
+        child.putArray("children").addObject().put("name", "grandchild-too-long");
+        List<ValidationProblem> problems = validator.validate(MISC, m);
+        assertEquals(1, problems.size(), problems::toString);
+        assertProblemAt(problems, "/tree/children/0/children/0/name", "bytes");
+    }
+
+    @Test
+    void mainSuffixIsNormalised() {
+        // the record's own $type written as nsid#main
+        assertValid(validator.validate(DOCUMENT, document().put("$type", "site.standard.document#main")));
+        // a union member's $type written as nsid#main, matched against a bare-NSID ref
+        ObjectNode m = misc().put("$type", "org.example.misc#main");
+        m.putObject("pick").put("$type", "com.atproto.repo.strongRef#main")
+                .put("uri", "at://did:plc:abc/site.standard.document/3k")
+                .put("cid", "bafkreigklztkr2tnny2hrbsxwdllmkkhenleaywqhus4bwcjgephi42vy4");
+        assertValid(validator.validate(MISC, m));
+    }
+
+    @Test
+    void bareNsidUnionRef() {
+        ObjectNode ok = misc();
+        ok.putObject("pick").put("$type", "com.atproto.repo.strongRef")
+                .put("uri", "at://did:plc:abc/site.standard.document/3k")
+                .put("cid", "bafkreigklztkr2tnny2hrbsxwdllmkkhenleaywqhus4bwcjgephi42vy4");
+        assertValid(validator.validate(MISC, ok));
+        // the bare-NSID member is validated against com.atproto.repo.strongRef#main
+        ObjectNode badCid = misc();
+        badCid.putObject("pick").put("$type", "com.atproto.repo.strongRef")
+                .put("uri", "at://did:plc:abc/site.standard.document/3k").put("cid", "nope");
+        assertProblemAt(validator.validate(MISC, badCid), "/pick/cid", "cid");
+        // closed: anything else fails
+        ObjectNode other = misc();
+        other.putObject("pick").put("$type", "com.atproto.repo.strongRef#other");
+        assertProblemAt(validator.validate(MISC, other), "/pick", "closed union");
     }
 
     @Test

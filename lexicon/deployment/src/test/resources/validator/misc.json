@@ -1,0 +1,29 @@
+{
+  "lexicon": 1,
+  "id": "org.example.misc",
+  "description": "Validator-only test Lexicon (not a codegen input): a deliberately malformed ref-only cycle (#a -> #b -> #a), a recursive data type, and a closed union whose ref is a bare NSID.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "properties": {
+          "loop": {"type": "ref", "ref": "#a"},
+          "tree": {"type": "ref", "ref": "#node"},
+          "pick": {"type": "union", "closed": true, "refs": ["com.atproto.repo.strongRef"]}
+        }
+      }
+    },
+    "a": {"type": "ref", "ref": "#b"},
+    "b": {"type": "ref", "ref": "#a"},
+    "node": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "maxLength": 10},
+        "children": {"type": "array", "items": {"type": "ref", "ref": "#node"}}
+      }
+    }
+  }
+}

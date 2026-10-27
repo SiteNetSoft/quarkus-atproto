@@ -85,11 +85,18 @@ class AtprotoLexiconProcessor {
         }
     }
 
-    /** The application's {@code src/main/lexicons/**.json} as resources under {@value #DIR}, when built from source. */
-    private static Map<String, byte[]> appSourceLexicons(ApplicationModel model) {
+    /**
+     * The application's {@code src/main/lexicons/**.json} as resources under {@value #DIR}, when built from source.
+     * Without workspace information the directory cannot be located: logged at WARN, since the validator then does not
+     * know the application's own record types (optimistic validation lets them through unchecked).
+     */
+    static Map<String, byte[]> appSourceLexicons(ApplicationModel model) {
         Map<String, byte[]> out = new TreeMap<>();
         WorkspaceModule module = model.getApplicationModule();
         if (module == null || module.getModuleDir() == null) {
+            LOG.warnf("No workspace module for %s: Lexicons in src/main/%s are not registered for validation "
+                    + "(ship them under src/main/resources/%s/ instead)", model.getAppArtifact().toCompactCoords(),
+                    AtprotoLexiconCodeGen.INPUT_DIRECTORY, DIR);
             return out;
         }
         Path dir = module.getModuleDir().toPath().resolve("src/main/" + AtprotoLexiconCodeGen.INPUT_DIRECTORY);

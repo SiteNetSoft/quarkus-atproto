@@ -162,6 +162,12 @@ public class LexiconValidator {
   private final class Run {
     final List<ValidationProblem> problems = new ArrayList<>();
     final ValidationMode mode;
+    /**
+     * Defs entered through refs (and union members) for the current value, without descending into its children:
+     * a def met twice here is a ref-only cycle ({@code #a -> #b -> #a}) in a malformed Lexicon. Reset for each child
+     * value, so recursive data types (a node whose children ref the node) still validate.
+     */
+    Set<String> refChain = new HashSet<>();
 
     Run(ValidationMode mode) {
       this.mode = mode;
@@ -209,7 +215,27 @@ public class LexiconValidator {
         }
         return;
       }
-      value(def.get(), v, path, target.nsid());
+      String key = target.nsid().value() + "#" + target.name();
+      if (!refChain.add(key)) {
+        problem(path, "Lexicon ref cycle through " + key + " (malformed Lexicon: refs that never reach a type)");
+        return;
+      }
+      try {
+        value(def.get(), v, path, target.nsid());
+      } finally {
+        refChain.remove(key);
+      }
+    }
+
+    /** Validates a nested value (property or array item) with a fresh ref chain. */
+    void nested(JsonNode schema, JsonNode v, String path, Nsid ctx) {
+      Set<String> saved = refChain;
+      refChain = new HashSet<>();
+      try {
+        value(schema, v, path, ctx);
+      } finally {
+        refChain = saved;
+      }
     }
 
     void union(JsonNode schema, JsonNode v, String path, Nsid ctx) {
@@ -266,7 +292,7 @@ public class LexiconValidator {
           }
           continue;
         }
-        value(p.getValue(), pv, at, ctx);
+        nested(p.getValue(), pv, at, ctx);
       }
     }
 
@@ -442,7 +468,7 @@ public class LexiconValidator {
         if (item.isNull()) {
           problem(at, "array items must not be null");
         } else {
-          value(items, item, at, ctx);
+          nested(items, item, at, ctx);
         }
       }
     }

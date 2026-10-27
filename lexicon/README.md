@@ -68,6 +68,12 @@ validator.validate(collection, record, ValidationMode.TRUE);                    
 and its dependencies plus your `src/main/lexicons`, found **at build time** (no runtime classpath scanning; the files
 are registered as native-image resources). `knows(nsid)`, `def(nsid, "main")`, `document(nsid)`, `nsids()`.
 
+Your `src/main/lexicons` files are packaged as `META-INF/atproto/lexicons/<nsid path>.json` when the build knows the
+project's source layout (Maven and Gradle builds, dev mode, tests). Without that workspace information they are not
+registered (a WARN says so) and optimistic validation lets your own records through unchecked. Lexicon JSON placed
+directly under `src/main/resources/META-INF/atproto/lexicons/<nsid path>.json` is always registered (but is not a
+code generation input).
+
 Rules checked (reporting every problem, each with a JSON Pointer path):
 
 - the record is an object and its `$type` equals the collection NSID;

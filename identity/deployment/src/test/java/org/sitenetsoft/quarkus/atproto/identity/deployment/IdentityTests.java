@@ -17,7 +17,9 @@ final class IdentityTests {
     static QuarkusUnitTest unitTest(Class<?>... classes) {
         QuarkusUnitTest test = base(classes);
         for (String handle : FakeIdentityHost.HANDLES) {
-            test.overrideConfigKey("quarkus.atproto.identity.https-well-known-override.\"" + handle + "\"",
+            // bob's key is mixed case: override keys are matched case-insensitively
+            String key = handle.equals("bob.example.test") ? "Bob.Example.Test" : handle;
+            test.overrideConfigKey("quarkus.atproto.identity.https-well-known-override.\"" + key + "\"",
                     FakeIdentityHost.wellKnownBase(handle));
         }
         return test;

@@ -40,10 +40,12 @@ public final class FakeIdentityHost {
     static final String PDS_NONE = plc('k');
     static final String PDS_WRONG_TYPE = plc('l');
     static final String CACHED = plc('m');
+    static final String FLAKY = plc('n');
 
     /** Handles whose well-known goes to this host (all test handles, so no test reaches the network). */
     static final List<String> HANDLES = List.of("alice.example.test", "bob.example.test", "carol.example.test",
-            "conflict.example.test", "erin.example.test", "cached.example.test", "nobody.example.test");
+            "conflict.example.test", "erin.example.test", "cached.example.test", "nobody.example.test",
+            "flaky.example.test", "broken.example.test", "shaky.example.test");
 
     /** Handle well-known answers; handles not listed answer 404. */
     private static final Map<String, String> WELL_KNOWN = Map.of(
@@ -71,7 +73,8 @@ public final class FakeIdentityHost {
             Map.entry(PDS_NONE, document(PDS_NONE, null, "")),
             Map.entry(PDS_WRONG_TYPE, document(PDS_WRONG_TYPE, null,
                     "{\"id\":\"#atproto_pds\",\"type\":\"SomethingElse\",\"serviceEndpoint\":\"https://pds.example.test\"}")),
-            Map.entry(CACHED, document(CACHED, "cached.example.test", pds(PDS))));
+            Map.entry(CACHED, document(CACHED, "cached.example.test", pds(PDS))),
+            Map.entry(FLAKY, document(FLAKY, "flaky.example.test", pds(PDS))));
     private final int port;
 
     private FakeIdentityHost() {
@@ -136,7 +139,9 @@ public final class FakeIdentityHost {
         if (path.startsWith("/wk/") && path.endsWith("/.well-known/atproto-did")) {
             String handle = path.substring(4, path.length() - "/.well-known/atproto-did".length());
             String did = WELL_KNOWN.get(handle);
-            if (did == null) {
+            if (handle.equals("broken.example.test")) {
+                req.response().setStatusCode(500).end("upstream down");
+            } else if (did == null) {
                 req.response().setStatusCode(404).end("not found");
             } else {
                 req.response().putHeader("Content-Type", "text/plain").end(did);

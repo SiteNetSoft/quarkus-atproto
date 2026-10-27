@@ -26,15 +26,29 @@ public class TestTxtResolver implements TxtResolver {
             "_atproto.conflict.example.test", List.of("did=" + FakeIdentityHost.CONFLICT_1,
                     "did=" + FakeIdentityHost.CONFLICT_2),
             "_atproto.erin.example.test", List.of("did=" + FakeIdentityHost.ERIN),
-            "_atproto.cached.example.test", List.of("did=" + FakeIdentityHost.CACHED));
+            "_atproto.cached.example.test", List.of("did=" + FakeIdentityHost.CACHED),
+            "_atproto.flaky.example.test", List.of("did=" + FakeIdentityHost.FLAKY));
 
     static final Set<String> SLOW = Set.of("_atproto.carol.example.test");
 
     private final Map<String, AtomicInteger> lookups = new ConcurrentHashMap<>();
+    private final Set<String> failing = ConcurrentHashMap.newKeySet();
+
+    /** While on, lookups of {@code name} fail as a DNS server error would. */
+    public void failing(String name, boolean on) {
+        if (on) {
+            failing.add(name);
+        } else {
+            failing.remove(name);
+        }
+    }
 
     @Override
     public Uni<List<String>> txt(String name) {
         lookups.computeIfAbsent(name, k -> new AtomicInteger()).incrementAndGet();
+        if (failing.contains(name)) {
+            return Uni.createFrom().failure(new IllegalStateException("SERVFAIL (test)"));
+        }
         Uni<List<String>> answer = Uni.createFrom().item(RECORDS.getOrDefault(name, List.of()));
         // carol's DNS answers after her well-known, so DNS winning there proves the HTTPS answer waited for it
         return SLOW.contains(name) ? answer.onItem().delayIt().by(Duration.ofMillis(300)) : answer;

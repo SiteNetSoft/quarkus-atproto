@@ -2,6 +2,7 @@ package org.sitenetsoft.quarkus.atproto.identity;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -30,6 +31,7 @@ import org.sitenetsoft.quarkus.safefetch.SafeFetchConfig;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 
+import io.quarkus.runtime.LaunchMode;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.Cancellable;
 import io.smallrye.mutiny.subscription.UniEmitter;
@@ -66,7 +68,7 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
         this.dns = dns;
         this.dids = dids;
         this.fetch = fetch;
-        this.wellKnownOverride = Map.copyOf(config.httpsWellKnownOverride());
+        this.wellKnownOverride = effectiveOverrides(config.httpsWellKnownOverride(), LaunchMode.current());
         // mirrors quarkus-did's did:web rule: http endpoints only when safe-fetch is relaxed for tests
         this.httpAllowed = !safeFetch.httpsOnly();
         boolean caching = !config.cacheTtl().isZero();
@@ -74,9 +76,26 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
                 .expireAfterWrite(config.cacheTtl()).build() : null;
         this.identities = caching ? Caffeine.newBuilder().maximumSize(MAX_CACHE_ENTRIES)
                 .expireAfterWrite(config.cacheTtl()).build() : null;
-        if (!wellKnownOverride.isEmpty()) {
-            LOG.infof("Handle well-known overrides active (test/dev only): %s", wellKnownOverride.keySet());
+    }
+
+    /**
+     * The well-known overrides to apply: none in production ({@link LaunchMode#NORMAL}), where the setting could
+     * redirect a handle's ownership proof to any URL (one WARN says it was ignored); otherwise the configured map with
+     * lowercase keys, matching {@link Handle#value()}.
+     */
+    static Map<String, URI> effectiveOverrides(Map<String, URI> configured, LaunchMode mode) {
+        if (configured == null || configured.isEmpty()) {
+            return Map.of();
         }
+        if (mode == LaunchMode.NORMAL) {
+            LOG.warnf("quarkus.atproto.identity.https-well-known-override is set but ignored in production "
+                    + "(test/dev only): %s", configured.keySet());
+            return Map.of();
+        }
+        Map<String, URI> lower = new HashMap<>();
+        configured.forEach((k, v) -> lower.put(k.toLowerCase(Locale.ROOT), v));
+        LOG.infof("Handle well-known overrides active (test/dev only): %s", lower.keySet());
+        return Map.copyOf(lower);
     }
 
     // ---- handle → DID ----
@@ -102,8 +121,15 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
                 });
     }
 
-    /** Result of one lookup method; lookups never fail, they report {@link Missing} instead. */
-    private sealed interface Lookup permits Found, Missing, Conflict {
+    /**
+     * Result of one lookup method; lookups never fail. {@link Missing} means the method cleanly found nothing (no
+     * record, 404, a body that is not a DID); {@link Errored} means it could not tell (DNS error or timeout, transport
+     * failure, HTTP 5xx or 429).
+     */
+    private sealed interface Lookup permits Found, Missing, Conflict, Errored {
+    }
+
+    private record Errored(String reason, Throwable cause) implements Lookup {
     }
 
     private record Found(Did did) implements Lookup {
@@ -119,7 +145,7 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
         String name = "_atproto." + handle.value();
         return Uni.createFrom().deferred(() -> dns.txt(name))
                 .map(records -> parseTxt(name, records))
-                .onFailure().recoverWithItem(t -> new Missing("DNS " + name + ": " + t.getMessage()));
+                .onFailure().recoverWithItem(t -> new Errored("DNS " + name + ": " + t.getMessage(), t));
     }
 
     static Lookup parseTxt(String name, List<String> records) {
@@ -146,7 +172,7 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
                 .withHeader("Accept", "text/plain");
         return Uni.createFrom().deferred(() -> fetch.get(uri, options))
                 .map(response -> parseWellKnown(uri, response))
-                .onFailure().recoverWithItem(t -> new Missing("HTTPS " + uri + ": " + t.getMessage()));
+                .onFailure().recoverWithItem(t -> new Errored("HTTPS " + uri + ": " + t.getMessage(), t));
     }
 
     private URI wellKnownUri(Handle handle) {
@@ -159,6 +185,9 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
     }
 
     private static Lookup parseWellKnown(URI uri, FetchResponse response) {
+        if (response.status() >= 500 || response.status() == 429) {
+            return new Errored("HTTPS " + uri + ": status " + response.status(), null);
+        }
         if (!response.isSuccess()) {
             return new Missing("HTTPS " + uri + ": status " + response.status());
         }
@@ -242,9 +271,18 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
                 } else if (dns != null && https != null) {
                     if (https instanceof Found f) {
                         success = f.did();
+                    } else if (dns instanceof Errored || https instanceof Errored) {
+                        // could not tell: "try again", not "no such handle"
+                        IdentityResolutionFailed e = new IdentityResolutionFailed(handle.value(), "Handle " + handle
+                                + " could not be resolved (" + reason(dns) + "; " + reason(https) + ")",
+                                dns instanceof Errored d ? d.cause() : ((Errored) https).cause());
+                        if (dns instanceof Errored && https instanceof Errored h && h.cause() != null) {
+                            e.addSuppressed(h.cause());
+                        }
+                        failure = e;
                     } else {
                         failure = new HandleNotFound(handle.value(), "Handle " + handle + " does not resolve ("
-                                + ((Missing) dns).reason() + "; " + reason(https) + ")");
+                                + reason(dns) + "; " + reason(https) + ")");
                     }
                 } else {
                     return;
@@ -259,7 +297,12 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
         }
 
         private static String reason(Lookup l) {
-            return l instanceof Missing m ? m.reason() : l instanceof Conflict c ? c.reason() : String.valueOf(l);
+            return switch (l) {
+                case Missing m -> m.reason();
+                case Conflict c -> c.reason();
+                case Errored e -> e.reason();
+                case Found f -> "found " + f.did();
+            };
         }
     }
 
@@ -294,35 +337,49 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
                     URI pds = pds(did, doc);
                     Optional<String> key = doc.verificationMethod(SIGNING_KEY)
                             .map(VerificationMethod::publicKeyMultibase);
-                    return verifiedHandle(did, doc).map(handle -> new AtprotoIdentity(did, handle, pds, key));
-                })
-                .invoke(identity -> {
-                    if (identities != null) {
-                        identities.put(did, identity);
-                    }
-                    LOG.debugf("Resolved %s: handle %s, pds %s", did, identity.handle(), identity.pds());
+                    return verifiedHandle(did, doc).map(v -> {
+                        AtprotoIdentity identity = new AtprotoIdentity(did, v.handle(), pds, key);
+                        if (identities != null && v.cacheable()) {
+                            identities.put(did, identity);
+                        }
+                        LOG.debugf("Resolved %s: handle %s, pds %s", did, identity.handle(), identity.pds());
+                        return identity;
+                    });
                 });
     }
 
-    /** The document's first valid {@code at://} handle if it resolves back to {@code did}; else handle.invalid. */
-    private Uni<Handle> verifiedHandle(Did did, DidDocument doc) {
+    /** Outcome of the reverse check; not cacheable when the handle could not be resolved for a transient reason. */
+    private record Verified(Handle handle, boolean cacheable) {
+    }
+
+    /**
+     * The document's first valid {@code at://} handle if it resolves back to {@code did}; else handle.invalid. A
+     * handle that cleanly does not resolve, or resolves elsewhere, gives a cacheable handle.invalid; a resolution
+     * error ({@link IdentityResolutionFailed}) gives handle.invalid for this call only, so the next call retries.
+     */
+    private Uni<Verified> verifiedHandle(Did did, DidDocument doc) {
         Optional<Handle> claimed = claimedHandle(doc);
         if (claimed.isEmpty()) {
-            return Uni.createFrom().item(Handle.INVALID);
+            return Uni.createFrom().item(new Verified(Handle.INVALID, true));
         }
         Handle handle = claimed.get();
         return resolveHandle(handle)
                 .map(back -> {
                     if (back.equals(did)) {
-                        return handle;
+                        return new Verified(handle, true);
                     }
                     LOG.debugf("%s claims %s, which resolves to %s: handle invalid", did, handle, back);
-                    return Handle.INVALID;
+                    return new Verified(Handle.INVALID, true);
                 })
-                .onFailure(IdentityException.class).recoverWithItem(t -> {
+                .onFailure(HandleNotFound.class).recoverWithItem(t -> {
                     LOG.debugf("%s claims %s, which does not resolve (%s): handle invalid", did, handle,
                             t.getMessage());
-                    return Handle.INVALID;
+                    return new Verified(Handle.INVALID, true);
+                })
+                .onFailure(IdentityResolutionFailed.class).recoverWithItem(t -> {
+                    LOG.debugf("%s claims %s, which could not be checked now (%s): handle invalid, not cached", did,
+                            handle, t.getMessage());
+                    return new Verified(Handle.INVALID, false);
                 });
     }
 

@@ -15,8 +15,9 @@ public interface IdentityResolver {
      * Resolves a handle to its DID: DNS TXT {@code _atproto.<handle>} ({@code did=…}) and HTTPS
      * {@code https://<handle>/.well-known/atproto-did} in parallel. DNS wins when both answer differently.
      *
-     * @throws HandleNotFound neither method gave a DID
-     * @throws IdentityResolutionFailed the DNS records name several different DIDs
+     * @throws HandleNotFound neither method gave a DID and both cleanly found nothing (no record, 404, not a DID)
+     * @throws IdentityResolutionFailed the DNS records name several different DIDs, or neither method gave a DID and
+     *         at least one could not tell (DNS error or timeout, transport failure, HTTP 5xx or 429): try again later
      */
     Did resolveHandle(Handle handle);
 
@@ -33,6 +34,8 @@ public interface IdentityResolver {
     /**
      * Resolves a DID: fetches its document, takes the PDS and signing key, and keeps the first valid {@code at://}
      * handle of {@code alsoKnownAs} only if that handle resolves back to this DID ({@link Handle#INVALID} otherwise).
+     * When the handle cannot be checked right now (a transient error) the result carries {@link Handle#INVALID} but is
+     * not cached, so the next call checks again.
      *
      * @throws NoPds the DID document names no usable PDS
      * @throws IdentityResolutionFailed not did:plc/did:web, DID not found or invalid, timeout

@@ -30,7 +30,8 @@ public interface IdentityConfig {
     /**
      * <strong>Test and dev only.</strong> Handle → base URL: the handle's well-known is fetched from
      * {@code <base>/.well-known/atproto-did} instead of {@code https://<handle>/.well-known/atproto-did}, so a loopback
-     * server can stand in for the handle's host. Empty in production.
+     * server can stand in for the handle's host. Keys are matched case-insensitively. <strong>Ignored in production
+     * (normal launch mode)</strong>, with a WARN, because it could redirect a handle's ownership proof anywhere.
      */
     Map<String, URI> httpsWellKnownOverride();
 

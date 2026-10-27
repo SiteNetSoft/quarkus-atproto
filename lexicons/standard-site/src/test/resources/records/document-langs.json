@@ -1,0 +1,413 @@
+{
+  "path": "/i-love-making-diy-watercolor-palettes-too-1ujq8wv",
+  "site": "at://did:plc:v46ojbiop5ebs5h7gaomixcc/site.standard.publication/3m57zfsq3a2fo",
+  "tags": [
+    "watercolor",
+    "painting",
+    "review"
+  ],
+  "$type": "site.standard.document",
+  "langs": [
+    "en"
+  ],
+  "title": "i love making DIY watercolor palettes too.",
+  "content": {
+    "$type": "blog.pckt.content",
+    "items": [
+      {
+        "$type": "blog.pckt.block.heading",
+        "level": 3,
+        "plaintext": "there’s just something about a little compact kit that’s easy to take with me. (even though i haven’t taken one with me in a while)"
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "facets": [
+          {
+            "index": {
+              "byteEnd": 48,
+              "byteStart": 34
+            },
+            "features": [
+              {
+                "did": "did:plc:5amsebbtpuqieuxuqadmmvcv",
+                "$type": "blog.pckt.richtext.facet#didMention"
+              }
+            ]
+          }
+        ],
+        "plaintext": "this post is a direct response to @debbieohi.com’s recent post, go give that a read first: "
+      },
+      {
+        "src": "https://onething.pckt.blog/i-love-making-diy-watercolor-kits-used-one-in-my-art-demo-at-the-ny-times-y3bre17",
+        "$type": "blog.pckt.block.website",
+        "title": "I love making DIY watercolor kits (& used one in my art demo at the NY Times) - One Thing I've Learned",
+        "description": "I'm a longtime fan of DIY (Do-It-Yourself) art kits that I can take with me when on the road. Yes, I do still have commercial travel art kits as well....but I f...",
+        "previewImage": "https://pckt-blog-media.s3.us-east-2.amazonaws.com/images/5fb3862b-d054-4d9c-b5d9-271b5e5af6e7/DIY-TravelPaints-2Types-GumPack-Altoids.jpg"
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "please excuse the extreme state of neglect that my watercolor kits are in. "
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "i’ll start off with the tiniest one that i’ve made"
+      },
+      {
+        "ref": "at://did:plc:v46ojbiop5ebs5h7gaomixcc/blog.pckt.gallery/3mx7rsw6zrsov",
+        "$type": "blog.pckt.block.gallery"
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "this is the smallest and probably least practical one that i’ve made. it’s designed to be paired with a binder clip so you can open it up and then clip it to a small watercolor notebook. "
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "facets": [
+          {
+            "index": {
+              "byteEnd": 6,
+              "byteStart": 0
+            },
+            "features": [
+              {
+                "$type": "blog.pckt.richtext.facet#bold"
+              }
+            ]
+          }
+        ],
+        "plaintext": "pros: "
+      },
+      {
+        "$type": "blog.pckt.block.bulletList",
+        "content": [
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "very compact "
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "lightweight "
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "includes 9 colors and a mixing tray"
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "conveniently attached to notebook when opened"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "facets": [
+          {
+            "index": {
+              "byteEnd": 5,
+              "byteStart": 0
+            },
+            "features": [
+              {
+                "$type": "blog.pckt.richtext.facet#bold"
+              }
+            ]
+          }
+        ],
+        "plaintext": "cons:"
+      },
+      {
+        "$type": "blog.pckt.block.bulletList",
+        "content": [
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "small amount of paint"
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "a little messy "
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "no brush storage "
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "no sponge"
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "need to carry water "
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "it’s a fun idea but it has a ways to go before being truly practical. i wish it could hold a brush and mayyybe a sponge. i also was never happy with how it looked while closed because of the way the clip slot creates weird empty space. i wish there was a way to keep it clipped to a notebook while closed too. not my favorite."
+      },
+      {
+        "$type": "blog.pckt.block.horizontalRule"
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "the next one is a modern take on the classic altoids travel kit. it’s a bit heavier and bulkier than the previous but it’s also fully self contained and ready to go. i like this one a lot. "
+      },
+      {
+        "ref": "at://did:plc:v46ojbiop5ebs5h7gaomixcc/blog.pckt.gallery/3mx7themkxnhw",
+        "$type": "blog.pckt.block.gallery"
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "i thought a lot about this before designing it, i knew that i didn’t want to compromise, and i wanted to utilize as much of the space as possible. "
+      },
+      {
+        "ref": "at://did:plc:v46ojbiop5ebs5h7gaomixcc/blog.pckt.gallery/3mx7thuwedlfx",
+        "$type": "blog.pckt.block.gallery"
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "what i came up with is a layered design. the bottom layer is a tray to keep small sheets of water color paper, and can also be used to keep finished pieces while on the go."
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "on top of this is the base layer which has six wells for color and two storage containers that can be used in various ways depending on what you like to carry. "
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "in the right cubby i keep a damp sponge for wetting and cleaning my brush. in the long cubby below i keep a bit of kneaded eraser and a compact travel brush taken from a winsor & newton travel kit (pictured below)"
+      },
+      {
+        "ref": "at://did:plc:v46ojbiop5ebs5h7gaomixcc/blog.pckt.gallery/3mx7urr2orc3g",
+        "$type": "blog.pckt.block.gallery"
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "the w&n travel kit is nice, i like the split mixing zones, and the amount of paint in the pans, but it feels bulky and inconvenient to carry around. and with it being plastic, it can’t be magnetically attached to a tripod or anything like that. "
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "anyways, getting back on track, i really like this altoids travel kit. "
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "facets": [
+          {
+            "index": {
+              "byteEnd": 5,
+              "byteStart": 0
+            },
+            "features": [
+              {
+                "$type": "blog.pckt.richtext.facet#bold"
+              }
+            ]
+          }
+        ],
+        "plaintext": "pros:"
+      },
+      {
+        "$type": "blog.pckt.block.bulletList",
+        "content": [
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "space for 12 colors "
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "compact design"
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "lid doubles as a mixing tray"
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "extra room for a brush and sponge "
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "bonus storage for paper"
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "got to eat cinnamon altoids "
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "maximum cuteness "
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "facets": [
+          {
+            "index": {
+              "byteEnd": 6,
+              "byteStart": 0
+            },
+            "features": [
+              {
+                "$type": "blog.pckt.richtext.facet#bold"
+              }
+            ]
+          }
+        ],
+        "plaintext": "cons: "
+      },
+      {
+        "$type": "blog.pckt.block.bulletList",
+        "content": [
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "once you put paint in, you can’t swap it out"
+              }
+            ]
+          },
+          {
+            "$type": "blog.pckt.block.listItem",
+            "content": [
+              {
+                "$type": "blog.pckt.block.text",
+                "plaintext": "i still don’t paint enough"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "if i was designing it again, i think id try to put some magnets into the design so that the tray could snap in place and also could magnetize to the lid when lifted out. "
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "and lastly, an upgrade that i may do at some point is a coat of ceramic paint on the lid to provide a better mixing surface. thanks Debbie for that one! "
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "anyways, thanks for reading, that’s all i got!! if you have a DIY painting kit, i’d love to see it :)"
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "i’ll sign off with a tiny painting of my clothing rack "
+      },
+      {
+        "$type": "blog.pckt.block.image",
+        "attrs": {
+          "alt": "",
+          "src": "blob:bafkreihavsqgw2w5ihb62bb2b2kbwx2fzzh52fimgrdavl6e66peeblksu",
+          "blob": {
+            "ref": {
+              "$link": "bafkreihavsqgw2w5ihb62bb2b2kbwx2fzzh52fimgrdavl6e66peeblksu"
+            },
+            "size": 581769,
+            "$type": "blob",
+            "mimeType": "image/jpeg"
+          },
+          "align": "center",
+          "placeholder": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD//gA7Q1JFQVRPUjogZ2QtanBlZyB2MS4wICh1c2luZyBJSkcgSlBFRyB2ODApLCBxdWFsaXR5ID0gNDAK/9sAQwAUDg8SDw0UEhASFxUUGB4yIR4cHB49LC4kMklATEtHQEZFUFpzYlBVbVZFRmSIZW13e4GCgU5gjZeMfZZzfoF8/9sAQwEVFxceGh47ISE7fFNGU3x8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8/8AAEQgACAAMAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8AldrmU7BEwT1U45waZLqKtK3lxuQCRk8c0UVhCKnubSfLsf/Z",
+          "naturalWidth": 1920,
+          "naturalHeight": 1307
+        }
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": ""
+      }
+    ]
+  },
+  "updatedAt": "2026-10-20T06:49:27.000Z",
+  "coverImage": {
+    "ref": {
+      "$link": "bafkreigklztkr2tnny2hrbsxwdllmkkhenleaywqhus4bwcjgephi42vy4"
+    },
+    "size": 940286,
+    "$type": "blob",
+    "mimeType": "image/jpeg"
+  },
+  "description": "there’s just something about a little compact kit that’s easy to take with me. (even though i haven’t taken one with me in a while)",
+  "publishedAt": "2026-10-06T17:11:24.000Z",
+  "textContent": "there’s just something about a little compact kit that’s easy to take with me. (even though i haven’t taken one with me in a while)\nthis post is a direct response to ’s recent post, go give that a read first: \nplease excuse the extreme state of neglect that my watercolor kits are in. \ni’ll start off with the tiniest one that i’ve made\nthis is the smallest and probably least practical one that i’ve made. it’s designed to be paired with a binder clip so you can open it up and then clip it to a small watercolor notebook. \npros: \nvery compact \nlightweight \nincludes 9 colors and a mixing tray\nconveniently attached to notebook when opened\ncons:\nsmall amount of paint\na little messy \nno brush storage \nno sponge\nneed to carry water \nit’s a fun idea but it has a ways to go before being truly practical. i wish it could hold a brush and mayyybe a sponge. i also was never happy with how it looked while closed because of the way the clip slot creates weird empty space. i wish there was a way to keep it clipped to a notebook while closed too. not my favorite.\nthe next one is a modern take on the classic altoids travel kit. it’s a bit heavier and bulkier than the previous but it’s also fully self contained and ready to go. i like this one a lot. \ni thought a lot about this before designing it, i knew that i didn’t want to compromise, and i wanted to utilize as much of the space as possible. \nwhat i came up with is a layered design. the bottom layer is a tray to keep small sheets of water color paper, and can also be used to keep finished pieces while on the go.\non top of this is the base layer which has six wells for color and two storage containers that can be used in various ways depending on what you like to carry. \nin the right cubby i keep a damp sponge for wetting and cleaning my brush. in the long cubby below i keep a bit of kneaded eraser and a compact travel brush taken from a winsor & newton travel kit (pictured below)\nthe w&n travel kit is nice, i like the split mixing zones, and the amount of paint in the pans, but it feels bulky and inconvenient to carry around. and with it being plastic, it can’t be magnetically attached to a tripod or anything like that. \nanyways, getting back on track, i really like this altoids travel kit. \npros:\nspace for 12 colors \ncompact design\nlid doubles as a mixing tray\nextra room for a brush and sponge \nbonus storage for paper\ngot to eat cinnamon altoids \nmaximum cuteness \ncons: \nonce you put paint in, you can’t swap it out\ni still don’t paint enough\nif i was designing it again, i think id try to put some magnets into the design so that the tray could snap in place and also could magnetize to the lid when lifted out. \nand lastly, an upgrade that i may do at some point is a coat of ceramic paint on the lid to provide a better mixing surface. thanks Debbie for that one! \nanyways, thanks for reading, that’s all i got!! if you have a DIY painting kit, i’d love to see it :)\ni’ll sign off with a tiny painting of my clothing rack"
+}

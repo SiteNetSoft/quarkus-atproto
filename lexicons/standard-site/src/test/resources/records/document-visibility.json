@@ -1,0 +1,168 @@
+{
+  "site": "at://did:plc:e5zplwgiznavptdxhx5n2zlp/site.standard.publication/3mbfxvlty6a2y",
+  "$type": "site.standard.document",
+  "title": "Test Article",
+  "content": [
+    {
+      "id": "3ab65dcd-12b0-41ec-858f-c9ba2fcb598b",
+      "type": "paragraph",
+      "props": {
+        "textColor": "default",
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "content": [],
+      "children": []
+    },
+    {
+      "id": "97fea27b-83cc-404a-9096-ff64feeefc6d",
+      "type": "heading",
+      "props": {
+        "level": 2,
+        "textColor": "default",
+        "isToggleable": false,
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "content": [
+        {
+          "text": "Heading\n",
+          "type": "text",
+          "styles": {}
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "347d36d5-ccc8-4ad4-ae63-5ad8c9fe92c2",
+      "type": "paragraph",
+      "props": {
+        "textColor": "default",
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "content": [
+        {
+          "text": "Testing out the publisher app in Aether OS.",
+          "type": "text",
+          "styles": {}
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "d46d7df6-9be0-4049-a2c6-cf38c15bfa2e",
+      "type": "paragraph",
+      "props": {
+        "textColor": "default",
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "content": [
+        {
+          "text": "It uses the new ",
+          "type": "text",
+          "styles": {}
+        },
+        {
+          "href": "https://standard.site",
+          "type": "link",
+          "content": [
+            {
+              "text": "site.standard.document",
+              "type": "text",
+              "styles": {}
+            }
+          ]
+        },
+        {
+          "text": " lexicon that was announced today.",
+          "type": "text",
+          "styles": {}
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "4dbf45b0-991d-422f-8f24-94dfff3c5a47",
+      "type": "paragraph",
+      "props": {
+        "textColor": "default",
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "content": [],
+      "children": []
+    },
+    {
+      "id": "3c5c033f-e415-4784-ae56-a93f359085a6",
+      "type": "video",
+      "props": {
+        "url": "http://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+        "name": "BigBuckBunny.mp4",
+        "caption": "",
+        "showPreview": true,
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "children": []
+    },
+    {
+      "id": "915a2407-eb0d-4275-a7be-c166cd8f0736",
+      "type": "quote",
+      "props": {
+        "textColor": "default",
+        "backgroundColor": "default"
+      },
+      "content": [
+        {
+          "text": "Using a block editor that allows for video and various block level style adjustments.",
+          "type": "text",
+          "styles": {}
+        }
+      ],
+      "children": []
+    },
+    {
+      "id": "9deeaed1-61ff-43f4-afa9-3b9d77ec8ab6",
+      "type": "paragraph",
+      "props": {
+        "textColor": "default",
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "content": [],
+      "children": []
+    },
+    {
+      "id": "800ec8ed-c429-4c08-864b-fdbdf8f65216",
+      "type": "paragraph",
+      "props": {
+        "textColor": "default",
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "content": [],
+      "children": []
+    },
+    {
+      "id": "ce708364-38dd-4d14-a252-4e5042e19615",
+      "type": "paragraph",
+      "props": {
+        "textColor": "default",
+        "textAlignment": "left",
+        "backgroundColor": "default"
+      },
+      "content": [],
+      "children": []
+    }
+  ],
+  "updatedAt": "2026-03-13T04:46:44.965Z",
+  "visibility": "public",
+  "bskyPostRef": {
+    "cid": "bafyreih4rgakhrz4li4igka6zdktl2ptg2ll27zn3mpkvan54j7ajw3lga",
+    "uri": "at://did:plc:e5zplwgiznavptdxhx5n2zlp/app.bsky.feed.post/3mgw4b7p3662c"
+  },
+  "publishedAt": "2026-01-02T03:40:21.344Z",
+  "textContent": "Heading\n\n\nTesting out the publisher app in Aether OS.\n\nIt uses the new  lexicon that was announced today."
+}

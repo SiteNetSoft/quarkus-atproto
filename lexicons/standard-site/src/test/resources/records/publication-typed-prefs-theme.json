@@ -1,0 +1,194 @@
+{
+  "$type": "site.standard.publication",
+  "basicTheme": {
+    "$type": "site.standard.theme.basic",
+    "accent": {
+      "$type": "site.standard.theme.color#rgb",
+      "b": 0,
+      "g": 255,
+      "r": 189
+    },
+    "accentForeground": {
+      "$type": "site.standard.theme.color#rgb",
+      "b": 0,
+      "g": 118,
+      "r": 66
+    },
+    "background": {
+      "$type": "site.standard.theme.color#rgb",
+      "b": 41,
+      "g": 30,
+      "r": 0
+    },
+    "foreground": {
+      "$type": "site.standard.theme.color#rgb",
+      "b": 163,
+      "g": 214,
+      "r": 255
+    }
+  },
+  "description": "I'm AuDHD, which means things come very easy or very hard, nothing in between. \n\n-an Offprint publication.",
+  "icon": {
+    "$type": "blob",
+    "mimeType": "image/jpeg",
+    "ref": {
+      "$link": "bafkreihcmbcc7e7gvkvdc2qqkvzamzwhd5nroa7w2jnemtmhaawegfe2zi"
+    },
+    "size": 43372
+  },
+  "name": "Impulsive Static",
+  "preferences": {
+    "$type": "site.standard.publication#preferences",
+    "locale": "en-US",
+    "showByline": true,
+    "showInDiscover": true,
+    "timezone": "America/Los_Angeles"
+  },
+  "theme": {
+    "$type": "app.offprint.theme",
+    "colorScheme": "dark",
+    "colors": {
+      "$type": "app.offprint.theme.colors",
+      "accent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 82,
+        "g": 82,
+        "r": 82
+      },
+      "accentContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 250,
+        "g": 250,
+        "r": 250
+      },
+      "base100": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 41,
+        "g": 30,
+        "r": 0
+      },
+      "base200": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 29,
+        "g": 17,
+        "r": 0
+      },
+      "base300": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 17,
+        "g": 6,
+        "r": 0
+      },
+      "baseContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 163,
+        "g": 214,
+        "r": 255
+      },
+      "error": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 79,
+        "g": 78,
+        "r": 240
+      },
+      "errorContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 0,
+        "g": 0,
+        "r": 105
+      },
+      "info": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 254,
+        "g": 186,
+        "r": 0
+      },
+      "infoContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 74,
+        "g": 47,
+        "r": 5
+      },
+      "neutral": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 67,
+        "g": 56,
+        "r": 0
+      },
+      "neutralContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 163,
+        "g": 214,
+        "r": 255
+      },
+      "primary": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 0,
+        "g": 255,
+        "r": 189
+      },
+      "primaryContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 0,
+        "g": 118,
+        "r": 66
+      },
+      "secondary": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 244,
+        "g": 190,
+        "r": 206
+      },
+      "secondaryContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 117,
+        "g": 71,
+        "r": 86
+      },
+      "success": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 115,
+        "g": 223,
+        "r": 0
+      },
+      "successContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 21,
+        "g": 46,
+        "r": 3
+      },
+      "warning": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 0,
+        "g": 192,
+        "r": 255
+      },
+      "warningContent": {
+        "$type": "site.standard.theme.color.rgb",
+        "b": 0,
+        "g": 66,
+        "r": 132
+      }
+    },
+    "effects": {
+      "$type": "app.offprint.theme.effects",
+      "depth": true,
+      "noise": false
+    },
+    "sizing": {
+      "$type": "app.offprint.theme.sizing",
+      "border": "1px",
+      "radiusBox": "0.5rem",
+      "radiusField": "0.25rem",
+      "radiusSelector": "2rem",
+      "sizeField": "0.25rem",
+      "sizeSelector": "0.25rem"
+    },
+    "typography": {
+      "$type": "app.offprint.theme.typography",
+      "bodyFont": "merriweather",
+      "headingFont": "playfair-display"
+    }
+  },
+  "url": "https://impulsive-static.offprint.app"
+}

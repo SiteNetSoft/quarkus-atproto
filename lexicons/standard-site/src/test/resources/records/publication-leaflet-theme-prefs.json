@@ -1,0 +1,86 @@
+{
+  "url": "https://kandyelmo.leaflet.pub",
+  "icon": {
+    "ref": {
+      "$link": "bafkreih2diw2lwck22cw5h76jpeo2gmbfvchjxlvsqknib6mxiz64zgjmm"
+    },
+    "size": 740926,
+    "$type": "blob",
+    "mimeType": "image/png"
+  },
+  "name": "Kandy's Yapping Sessions",
+  "$type": "site.standard.publication",
+  "theme": {
+    "$type": "pub.leaflet.publication#theme",
+    "primary": {
+      "b": 49,
+      "g": 49,
+      "r": 59,
+      "$type": "pub.leaflet.theme.color#rgb"
+    },
+    "bodyFont": "lora",
+    "pageWidth": 768,
+    "accentText": {
+      "b": 242,
+      "g": 242,
+      "r": 240,
+      "$type": "pub.leaflet.theme.color#rgb"
+    },
+    "headingFont": "lora",
+    "pageBackground": {
+      "a": 100,
+      "b": 235,
+      "g": 251,
+      "r": 255,
+      "$type": "pub.leaflet.theme.color#rgba"
+    },
+    "backgroundColor": {
+      "b": 253,
+      "g": 255,
+      "r": 235,
+      "$type": "pub.leaflet.theme.color#rgb"
+    },
+    "accentBackground": {
+      "b": 0,
+      "g": 0,
+      "r": 181,
+      "$type": "pub.leaflet.theme.color#rgb"
+    },
+    "showPageBackground": true
+  },
+  "basicTheme": {
+    "$type": "site.standard.theme.basic",
+    "accent": {
+      "b": 0,
+      "g": 0,
+      "r": 181,
+      "$type": "site.standard.theme.color#rgb"
+    },
+    "background": {
+      "b": 253,
+      "g": 255,
+      "r": 235,
+      "$type": "site.standard.theme.color#rgb"
+    },
+    "foreground": {
+      "b": 49,
+      "g": 49,
+      "r": 59,
+      "$type": "site.standard.theme.color#rgb"
+    },
+    "accentForeground": {
+      "b": 242,
+      "g": 242,
+      "r": 240,
+      "$type": "site.standard.theme.color#rgb"
+    }
+  },
+  "description": "This is where threads can't contain all my social media posting-esque thoughts on things™️",
+  "preferences": {
+    "showComments": true,
+    "showMentions": true,
+    "showPrevNext": true,
+    "showInDiscover": true,
+    "showRecommends": true
+  }
+}

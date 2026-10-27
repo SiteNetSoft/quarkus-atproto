@@ -1,7 +1,8 @@
 package org.sitenetsoft.atproto.lexicon.codegen;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
@@ -13,6 +14,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonSerializable;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
+import com.fasterxml.jackson.databind.util.NameTransformer;
 import com.palantir.javapoet.AnnotationSpec;
 import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
@@ -29,6 +31,7 @@ import java.io.UncheckedIOException;
 import java.net.URI;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -83,6 +86,14 @@ public final class Generator {
   private static final ClassName NSID_CLASS = ClassName.get(Nsid.class);
   private static final ClassName STRING = ClassName.get(String.class);
   private static final ClassName JSON_NODE = ClassName.get(JsonNode.class);
+  /**
+   * The component of every generated record/object type holding the JSON properties its Lexicon does not declare
+   * (fields added by newer Lexicon revisions or other apps, an optional {@code $type} on a plain object), so reading
+   * a value and writing it back is lossless.
+   */
+  static final String UNKNOWN_FIELDS = "unknownFields";
+  private static final TypeName UNKNOWN_FIELDS_TYPE = ParameterizedTypeName.get(ClassName.get(Map.class), ClassName.get(String.class),
+      ClassName.get(JsonNode.class));
   /** Lexicon {@code bytes}: a runtime value type owning its {@code {"$bytes": base64}} wire form. */
   static final ClassName LEX_BYTES = ClassName.get("org.sitenetsoft.quarkus.atproto.lexicon", "Bytes");
   /** Raw XRPC bodies (blob upload input, non-JSON output). */
@@ -368,8 +379,6 @@ public final class Generator {
     TypeSpec.Builder b = scope.builder;
     b.addAnnotation(AnnotationSpec.builder(JsonInclude.class)
         .addMember("value", "$T.NON_NULL", JsonInclude.Include.class).build());
-    b.addAnnotation(AnnotationSpec.builder(JsonIgnoreProperties.class)
-        .addMember("ignoreUnknown", "true").build());
     if (typeId != null) {
       b.addAnnotation(AnnotationSpec.builder(JsonTypeInfo.class)
           .addMember("use", "$T.NAME", JsonTypeInfo.Id.class)
@@ -383,12 +392,39 @@ public final class Generator {
     }
     scope.hasDoc = javadoc(b, doc);
     MethodSpec.Builder ctor = MethodSpec.compactConstructorBuilder().addModifiers(Modifier.PUBLIC);
-    components(o.properties(), o.required(), o.nullable(), ctx, scope, ctor, where);
+    List<ParameterSpec> declared = components(o.properties(), o.required(), o.nullable(), ctx, scope, ctor, where);
+    if (declared.stream().anyMatch(p -> p.name().equals(UNKNOWN_FIELDS))) {
+      throw new LexiconException(where + ": a property named \"" + UNKNOWN_FIELDS + "\" collides with the generated "
+          + "component holding undeclared properties");
+    }
+    if (scope.hasDoc && !scope.hasParamDoc) {
+      b.addJavadoc("\n");
+    }
+    scope.hasParamDoc = true;
+    b.addJavadoc("@param $L JSON properties the Lexicon does not declare (a {@code $$type} on a plain object included), "
+        + "kept so a read-then-write round trip is lossless; never null\n", UNKNOWN_FIELDS);
+    ctor.addParameter(ParameterSpec.builder(UNKNOWN_FIELDS_TYPE, UNKNOWN_FIELDS).addAnnotation(JsonAnySetter.class)
+        .build());
+    ctor.addStatement("$N = $N == null ? $T.of() : $T.unmodifiableMap(new $T<>($N))", UNKNOWN_FIELDS, UNKNOWN_FIELDS,
+        Map.class, Collections.class, LinkedHashMap.class, UNKNOWN_FIELDS);
     b.recordConstructor(ctor.build());
+    b.addMethod(MethodSpec.methodBuilder(UNKNOWN_FIELDS).addModifiers(Modifier.PUBLIC)
+        .addAnnotation(JsonAnyGetter.class).returns(UNKNOWN_FIELDS_TYPE).addStatement("return $N", UNKNOWN_FIELDS)
+        .build());
+    MethodSpec.Builder convenience = MethodSpec.constructorBuilder().addModifiers(Modifier.PUBLIC)
+        .addJavadoc("A value without undeclared properties.\n");
+    List<String> args = new ArrayList<>();
+    for (ParameterSpec p : declared) {
+      convenience.addParameter(ParameterSpec.builder(p.type(), p.name()).build());
+      args.add(p.name());
+    }
+    args.add("null");
+    b.addMethod(convenience.addStatement("this($L)", String.join(", ", args)).build());
   }
 
-  private void components(Map<String, LexDef> props, List<String> required, List<String> nullable, Nsid ctx,
-                          Scope scope, MethodSpec.Builder ctor, String where) {
+  private List<ParameterSpec> components(Map<String, LexDef> props, List<String> required, List<String> nullable,
+                                         Nsid ctx, Scope scope, MethodSpec.Builder ctor, String where) {
+    List<ParameterSpec> out = new ArrayList<>();
     Set<String> names = new HashSet<>();
     for (Map.Entry<String, LexDef> e : props.entrySet()) {
       String prop = e.getKey();
@@ -422,11 +458,14 @@ public final class Generator {
         scope.hasParamDoc = true;
         scope.builder.addJavadoc("@param $L $L\n", member, text.strip());
       }
-      ctor.addParameter(p.build());
+      ParameterSpec built = p.build();
+      ctor.addParameter(built);
+      out.add(built);
       if (req && !nul) {
         ctor.addStatement("$T.requireNonNull($N, $S)", Objects.class, member, prop);
       }
     }
+    return out;
   }
 
   private TypeSpec unionType(ClassName cn, LexUnion u, Nsid ctx, String where) {
@@ -454,16 +493,20 @@ public final class Generator {
       b.addPermittedSubclass(variant);
       subTypes.addMember("value", "$L", AnnotationSpec.builder(JsonSubTypes.Type.class)
           .addMember("value", "$T.class", variant).addMember("name", "$S", key.typeId()).build());
-      b.addType(TypeSpec.recordBuilder(variant).addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+      TypeSpec.Builder vb = TypeSpec.recordBuilder(variant).addModifiers(Modifier.PUBLIC, Modifier.STATIC)
           .addSuperinterface(cn)
           .addJavadoc("The {@code $L} member.\n", javadocText(key.typeId()))
           .recordConstructor(MethodSpec.compactConstructorBuilder().addModifiers(Modifier.PUBLIC)
               .addAnnotation(delegating())
               .addParameter(target, "value")
-              .addStatement("$T.requireNonNull(value, $S)", Objects.class, "value").build())
-          .addMethod(MethodSpec.methodBuilder("value").addAnnotation(JsonValue.class).addAnnotation(Override.class)
-              .addModifiers(Modifier.PUBLIC).returns(target).addStatement("return value").build())
-          .build());
+              .addStatement("$T.requireNonNull(value, $S)", Objects.class, "value").build());
+      if (isObjectRef(key)) {
+        objectVariant(vb, target, key.typeId());
+      } else {
+        vb.addMethod(MethodSpec.methodBuilder("value").addAnnotation(JsonValue.class).addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC).returns(target).addStatement("return value").build());
+      }
+      b.addType(vb.build());
     }
     AnnotationSpec.Builder typeInfo = AnnotationSpec.builder(JsonTypeInfo.class)
         .addMember("use", "$T.NAME", JsonTypeInfo.Id.class)
@@ -481,6 +524,38 @@ public final class Generator {
       b.addAnnotation(subTypes.build());
     }
     return b.build();
+  }
+
+  /** Whether a union member ref denotes a generated record/object type (one with {@value #UNKNOWN_FIELDS}). */
+  private boolean isObjectRef(DefKey key) {
+    return set.resolve(key).map(r -> r.def() instanceof LexRecord || r.def() instanceof LexObject)
+        // not in this set: a class from a dependency pack's index, and unions may only list records and objects
+        .orElse(true);
+  }
+
+  /**
+   * A union member wrapping a generated object: written as the object's own properties plus {@code $type}. The
+   * {@code $type} read with the member stays in the object's {@value #UNKNOWN_FIELDS} and is written from there, so
+   * it is neither lost nor written twice; a member built in code gets the union's type id.
+   */
+  private static void objectVariant(TypeSpec.Builder vb, TypeName target, String typeId) {
+    ClassName gen = ClassName.get(JsonGenerator.class);
+    ClassName provider = ClassName.get(SerializerProvider.class);
+    vb.addSuperinterface(JsonSerializable.class);
+    vb.addMethod(MethodSpec.methodBuilder("serialize").addAnnotation(Override.class).addModifiers(Modifier.PUBLIC)
+        .addParameter(gen, "gen").addParameter(provider, "provider").addException(IOException.class)
+        .addStatement("gen.writeStartObject(value)")
+        .beginControlFlow("if (!value.$N().containsKey($S))", UNKNOWN_FIELDS, "$type")
+        .addStatement("gen.writeStringField($S, $S)", "$type", typeId)
+        .endControlFlow()
+        .addStatement("provider.findValueSerializer($T.class).unwrappingSerializer($T.NOP).serialize(value, gen, "
+            + "provider)", target, NameTransformer.class)
+        .addStatement("gen.writeEndObject()").build());
+    vb.addMethod(MethodSpec.methodBuilder("serializeWithType").addAnnotation(Override.class)
+        .addModifiers(Modifier.PUBLIC)
+        .addParameter(gen, "gen").addParameter(provider, "provider")
+        .addParameter(TypeSerializer.class, "typeSer").addException(IOException.class)
+        .addStatement("serialize(gen, provider)").build());
   }
 
   private static AnnotationSpec delegating() {

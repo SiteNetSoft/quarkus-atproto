@@ -3,22 +3,26 @@ package site.standard;
 
 import com.atproto.label.Defs;
 import com.atproto.repo.StrongRef;
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonTypeName;
-import com.fasterxml.jackson.annotation.JsonValue;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.JsonSerializable;
 import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.jsontype.TypeSerializer;
+import com.fasterxml.jackson.databind.util.NameTransformer;
 import java.io.IOException;
 import java.net.URI;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import org.sitenetsoft.atproto.syntax.Datetime;
 import org.sitenetsoft.atproto.syntax.Did;
@@ -41,11 +45,9 @@ import org.sitenetsoft.quarkus.atproto.lexicon.BlobRef;
  * @param description A brief description or excerpt from the document.
  * @param publishedAt Required. Timestamp of the documents publish time.
  * @param textContent Plaintext representation of the documents contents. Should not contain markdown or other formatting.
+ * @param unknownFields JSON properties the Lexicon does not declare (a {@code $type} on a plain object included), kept so a read-then-write round trip is lossless; never null
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonIgnoreProperties(
-    ignoreUnknown = true
-)
 @JsonTypeInfo(
     use = JsonTypeInfo.Id.NAME,
     include = JsonTypeInfo.As.PROPERTY,
@@ -62,18 +64,35 @@ public record Document(@JsonProperty("path") String path, @JsonProperty("site") 
     @JsonProperty("description") String description,
     @JsonProperty("publishedAt") Datetime publishedAt,
     @JsonProperty("textContent") String textContent,
-    @JsonProperty("contributors") List<Document.Contributor> contributors) implements AtprotoRecord {
+    @JsonProperty("contributors") List<Document.Contributor> contributors,
+    @JsonAnySetter Map<String, JsonNode> unknownFields) implements AtprotoRecord {
   public static final String NSID = "site.standard.document";
 
   public Document {
     Objects.requireNonNull(site, "site");
     Objects.requireNonNull(title, "title");
     Objects.requireNonNull(publishedAt, "publishedAt");
+    unknownFields = unknownFields == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(unknownFields));
+  }
+
+  /**
+   * A value without undeclared properties.
+   */
+  public Document(String path, URI site, List<String> tags, Links links, String title,
+      Labels labels, Content content, Datetime updatedAt, BlobRef coverImage, StrongRef bskyPostRef,
+      String description, Datetime publishedAt, String textContent,
+      List<Contributor> contributors) {
+    this(path, site, tags, links, title, labels, content, updatedAt, coverImage, bskyPostRef, description, publishedAt, textContent, contributors, null);
   }
 
   @Override
   public String $type() {
     return NSID;
+  }
+
+  @JsonAnyGetter
+  public Map<String, JsonNode> unknownFields() {
+    return unknownFields;
   }
 
   /**
@@ -126,7 +145,7 @@ public record Document(@JsonProperty("path") String path, @JsonProperty("site") 
     /**
      * The {@code com.atproto.label.defs#selfLabels} member.
      */
-    record SelfLabels(Defs.SelfLabels value) implements Labels {
+    record SelfLabels(Defs.SelfLabels value) implements Labels, JsonSerializable {
       @JsonCreator(
           mode = JsonCreator.Mode.DELEGATING
       )
@@ -134,10 +153,20 @@ public record Document(@JsonProperty("path") String path, @JsonProperty("site") 
         Objects.requireNonNull(value, "value");
       }
 
-      @JsonValue
       @Override
-      public Defs.SelfLabels value() {
-        return value;
+      public void serialize(JsonGenerator gen, SerializerProvider provider) throws IOException {
+        gen.writeStartObject(value);
+        if (!value.unknownFields().containsKey("$type")) {
+          gen.writeStringField("$type", "com.atproto.label.defs#selfLabels");
+        }
+        provider.findValueSerializer(Defs.SelfLabels.class).unwrappingSerializer(NameTransformer.NOP).serialize(value, gen, provider);
+        gen.writeEndObject();
+      }
+
+      @Override
+      public void serializeWithType(JsonGenerator gen, SerializerProvider provider,
+          TypeSerializer typeSer) throws IOException {
+        serialize(gen, provider);
       }
     }
 
@@ -202,15 +231,27 @@ public record Document(@JsonProperty("path") String path, @JsonProperty("site") 
 
   /**
    * @param did Required.
+   * @param unknownFields JSON properties the Lexicon does not declare (a {@code $type} on a plain object included), kept so a read-then-write round trip is lossless; never null
    */
   @JsonInclude(JsonInclude.Include.NON_NULL)
-  @JsonIgnoreProperties(
-      ignoreUnknown = true
-  )
   public static record Contributor(@JsonProperty("did") Did did, @JsonProperty("role") String role,
-      @JsonProperty("displayName") String displayName) {
+      @JsonProperty("displayName") String displayName,
+      @JsonAnySetter Map<String, JsonNode> unknownFields) {
     public Contributor {
       Objects.requireNonNull(did, "did");
+      unknownFields = unknownFields == null ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(unknownFields));
+    }
+
+    /**
+     * A value without undeclared properties.
+     */
+    public Contributor(Did did, String role, String displayName) {
+      this(did, role, displayName, null);
+    }
+
+    @JsonAnyGetter
+    public Map<String, JsonNode> unknownFields() {
+      return unknownFields;
     }
   }
 }

@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.sitenetsoft.atproto.lexicon.codegen.model.LexiconDoc;
 import org.sitenetsoft.atproto.syntax.AtprotoSyntaxModule;
 
 class CompileTest {
@@ -35,7 +36,7 @@ class CompileTest {
     assertEquals("site.standard.document", document.getField("NSID").get(null));
     assertTrue(Class.forName("org.sitenetsoft.quarkus.atproto.lexicon.AtprotoRecord").isAssignableFrom(document));
     assertEquals(List.of("path", "site", "tags", "links", "title", "labels", "content", "updatedAt", "coverImage",
-            "bskyPostRef", "description", "publishedAt", "textContent", "contributors"),
+            "bskyPostRef", "description", "publishedAt", "textContent", "contributors", "unknownFields"),
         Arrays.stream(document.getRecordComponents()).map(RecordComponent::getName).toList());
     Class<?> repoClient = cl.loadClass("com.atproto.repo.RepoClient");
     assertTrue(Arrays.stream(repoClient.getMethods()).anyMatch(m -> m.getName().equals("createRecord")));
@@ -142,6 +143,63 @@ class CompileTest {
     Object v = mapper.readValue(withValue, put);
     assertEquals(cid, put.getMethod("swapRecord").invoke(v).toString());
     assertEquals(withValue, mapper.writeValueAsString(v));
+  }
+
+  private static final String KEEPER = """
+      {"lexicon":1,"id":"com.example.keeper","defs":{
+        "main":{"type":"record","key":"tid","record":{"type":"object","required":["name"],"properties":{
+          "name":{"type":"string"},
+          "prefs":{"type":"ref","ref":"#prefs"},
+          "inline":{"type":"object","properties":{"a":{"type":"integer"}}},
+          "items":{"type":"array","items":{"type":"union","refs":["#prefs"]}},
+          "shape":{"type":"union","refs":["#prefs"]}}}},
+        "prefs":{"type":"object","properties":{"show":{"type":"boolean"}}}}}
+      """;
+
+  @Test void undeclaredPropertiesSurviveARoundTrip() throws Exception {
+    LexiconDoc doc = LexiconParser.parse(KEEPER);
+    ClassLoader cl = InMemoryCompiler.compile(Generator.generate(LexiconSet.of(List.of(doc)), java.util.Set.of(doc.id()),
+        Map.of(), core, Optional.empty()));
+    Class<?> keeper = cl.loadClass("com.example.Keeper");
+    ObjectMapper mapper = new ObjectMapper();
+    // Undeclared properties at every level, nulls and nested values included, and an optional $type on a plain
+    // object ref (prefs) and on an inline object.
+    String json = """
+        {"$type":"com.example.keeper","name":"n","langs":["en"],"theme":{"x":{"y":[1,null]}},"gone":null,
+         "prefs":{"$type":"com.example.keeper#prefs","show":true,"showComments":false,"order":"rtl"},
+         "inline":{"a":1,"b":"extra"},
+         "items":[{"$type":"com.example.keeper#prefs","show":false,"more":1},{"$type":"com.other#thing","z":1}],
+         "shape":{"$type":"com.example.keeper#prefs","extra":{"deep":true}}}
+        """;
+    Object k = mapper.readValue(json, keeper);
+    assertEquals(mapper.readTree(json), mapper.readTree(mapper.writeValueAsString(k)));
+    @SuppressWarnings("unchecked")
+    Map<String, JsonNode> unknown = (Map<String, JsonNode>) keeper.getMethod("unknownFields").invoke(k);
+    assertEquals(java.util.Set.of("langs", "theme", "gone"), unknown.keySet());
+    Object prefs = keeper.getMethod("prefs").invoke(k);
+    assertEquals(Boolean.TRUE, prefs.getClass().getMethod("show").invoke(prefs));
+    assertThrows(UnsupportedOperationException.class, () -> unknown.put("x", null));
+    assertEquals(k, mapper.readValue(json, keeper));
+
+    // Built in code: the convenience constructor leaves unknownFields empty; a union member gets its $type once.
+    Class<?> prefsClass = cl.loadClass("com.example.Keeper$Prefs");
+    Object p = prefsClass.getConstructor(Boolean.class).newInstance(true);
+    assertEquals(Map.of(), prefsClass.getMethod("unknownFields").invoke(p));
+    Class<?> member = cl.loadClass("com.example.Keeper$Shape$Prefs");
+    Object m = member.getConstructor(prefsClass).newInstance(p);
+    assertEquals("{\"$type\":\"com.example.keeper#prefs\",\"show\":true}", mapper.writeValueAsString(m));
+    // A plain object ref built in code carries no $type.
+    assertEquals("{\"show\":true}", mapper.writeValueAsString(p));
+  }
+
+  @Test void propertyNamedUnknownFieldsIsRejected() {
+    LexiconDoc doc = LexiconParser.parse("""
+        {"lexicon":1,"id":"com.example.clash","defs":{"main":{"type":"object","properties":{
+          "unknownFields":{"type":"string"}}}}}
+        """);
+    LexiconException e = assertThrows(LexiconException.class, () -> Generator.generate(LexiconSet.of(List.of(doc)),
+        java.util.Set.of(doc.id()), Map.of(), core, Optional.empty()));
+    assertTrue(e.getMessage().contains("unknownFields"), e.getMessage());
   }
 
   @Test void closedUnionRejectsUnknownType() throws Exception {

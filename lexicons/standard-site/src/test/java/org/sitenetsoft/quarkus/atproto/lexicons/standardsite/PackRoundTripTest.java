@@ -24,8 +24,14 @@ class PackRoundTripTest {
   private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new AtprotoSyntaxModule());
   private static final String INDEX = "META-INF/atproto/lexicons/index.json";
 
+  private static final List<String> DOCUMENTS = List.of("document-pckt-labels.json",
+      "document-wordpress-bskypostref.json", "document-langs.json", "document-visibility.json",
+      "document-canonicalurl.json");
+  private static final List<String> PUBLICATIONS = List.of("publication-sharpie.json",
+      "publication-leaflet-theme-prefs.json", "publication-typed-prefs-theme.json");
+
   @Test void realDocumentsRoundTrip() throws Exception {
-    for (String name : List.of("document-pckt-labels.json", "document-wordpress-bskypostref.json")) {
+    for (String name : DOCUMENTS) {
       JsonNode original = record(name);
       Document doc = MAPPER.treeToValue(original, Document.class);
       assertEquals(Document.NSID, doc.$type());
@@ -41,15 +47,49 @@ class PackRoundTripTest {
     Document linked = MAPPER.treeToValue(record("document-wordpress-bskypostref.json"), Document.class);
     assertEquals("at://did:plc:g7j6qok5us4hjqlwjxwrrkjm/app.bsky.feed.post/3mmwlyioqc46v",
         linked.bskyPostRef().uri().toString());
+    assertTrue(linked.unknownFields().isEmpty());
+  }
+
+  @Test void undeclaredDocumentFieldsAreKept() throws Exception {
+    Document langs = MAPPER.treeToValue(record("document-langs.json"), Document.class);
+    assertEquals(record("document-langs.json").get("langs"), langs.unknownFields().get("langs"));
+    Document visibility = MAPPER.treeToValue(record("document-visibility.json"), Document.class);
+    assertTrue(visibility.unknownFields().containsKey("visibility"));
+    Document canonical = MAPPER.treeToValue(record("document-canonicalurl.json"), Document.class);
+    assertEquals("https://standard.site/docs/lexicons/recommend",
+        canonical.unknownFields().get("canonicalUrl").asText());
+    // a rewrite keeps them: change a declared field, the undeclared ones are still written
+    Document edited = new Document(langs.path(), langs.site(), langs.tags(), langs.links(), "Edited",
+        langs.labels(), langs.content(), langs.updatedAt(), langs.coverImage(), langs.bskyPostRef(),
+        langs.description(), langs.publishedAt(), langs.textContent(), langs.contributors(), langs.unknownFields());
+    JsonNode written = MAPPER.readTree(MAPPER.writeValueAsString(edited));
+    assertEquals("Edited", written.get("title").asText());
+    assertEquals(record("document-langs.json").get("langs"), written.get("langs"));
   }
 
   @Test void publicationRoundTrip() throws Exception {
-    JsonNode original = record("publication-sharpie.json");
-    Publication pub = MAPPER.treeToValue(original, Publication.class);
-    assertEquals("Sharpie Posts", pub.name());
-    assertNotNull(pub.basicTheme());
-    assertEquals(original, MAPPER.readTree(MAPPER.writeValueAsString(pub)));
-    assertInstanceOf(AtprotoRecord.class, pub);
+    for (String name : PUBLICATIONS) {
+      JsonNode original = record(name);
+      Publication pub = MAPPER.treeToValue(original, Publication.class);
+      assertNotNull(pub.basicTheme(), name);
+      assertInstanceOf(AtprotoRecord.class, pub);
+      assertEquals(original, MAPPER.readTree(MAPPER.writeValueAsString(pub)), name);
+    }
+  }
+
+  @Test void undeclaredPublicationFieldsAreKept() throws Exception {
+    Publication leaflet = MAPPER.treeToValue(record("publication-leaflet-theme-prefs.json"), Publication.class);
+    assertTrue(leaflet.unknownFields().containsKey("theme"));
+    assertEquals(Boolean.TRUE, leaflet.preferences().showInDiscover());
+    assertTrue(leaflet.preferences().unknownFields().keySet()
+        .containsAll(List.of("showComments", "showMentions", "showPrevNext", "showRecommends")));
+    Publication typed = MAPPER.treeToValue(record("publication-typed-prefs-theme.json"), Publication.class);
+    // the optional $type on the plain #preferences object ref survives
+    assertEquals("site.standard.publication#preferences",
+        typed.preferences().unknownFields().get("$type").asText());
+    JsonNode written = MAPPER.readTree(MAPPER.writeValueAsString(typed));
+    assertEquals("site.standard.publication#preferences", written.get("preferences").get("$type").asText());
+    assertEquals("America/Los_Angeles", written.get("preferences").get("timezone").asText());
   }
 
   @Test void indexListsEveryGeneratedDef() throws Exception {

@@ -14,7 +14,9 @@ AT Protocol) account at their own authorization server; the application then wri
 * *Localhost development client* (dev and test mode when `client-base-url` is unset or loopback): the `client_id` is
   `http://localhost?redirect_uri=http://127.0.0.1:<port><callback-path>&scope=<scope>`, a public client with no key and
   no hosting. Real authorization servers (bsky.social) accept it, so you can sign in with a real account from your
-  laptop: see xref:live-check.adoc[the live check]. It is refused in production.
+  laptop: see xref:live-check.adoc[the live check]. It is refused in production. Its redirect URI is on `127.0.0.1`,
+  so a sign-in posted to another host (`localhost`) answers 400 "Open the app at http://127.0.0.1:<port>/ to sign in
+  with the development client" (nothing sent, no cookie).
 
 == Flow
 
@@ -64,6 +66,14 @@ with 401.
   made by the same application user from the same browser; the link application principal → DID → session is stored
   in `AtprotoAccountLinks`; no cookie of the extension's own. `POST {unlink-path}[?did=...]` ends it: 204, 400 when
   several accounts are linked and `did` is missing, 401 without an application user, 404 when not linked.
++
+Quarkus form authentication works as is, with its default `SameSite=Strict` cookie. The callback is a navigation that
+starts on the authorization server's site, so the browser withholds `Strict` cookies there. When the callback carries
+the binding cookie but no application identity, the extension consumes nothing and answers a small *same-origin
+bounce* page (200, `<meta http-equiv="refresh">` and a link, no script, `Cache-Control: no-store`,
+`Referrer-Policy: no-referrer`) that loads the same callback URL with `bounce=1` added. That navigation starts on the
+application's own origin, so the `Strict` cookie is sent and the link completes. With the marker and still no
+application user the callback answers 401. There is at most one bounce, and none in `login` mode.
 
 == In a request: `AtprotoUser`
 
@@ -80,7 +90,8 @@ public String publish(@QueryParam("title") String title) {
 ----
 
 * `did()`, `handle()`, `pds()`, `scope()` (granted), `records()` / `reactiveRecords()`, `xrpc()`. Writes the granted
-  scope does not cover fail with `AtprotoScopeException` before anything is sent.
+  scope does not cover fail with `AtprotoScopeException` before anything is sent. Each records call goes to the
+  session's current PDS, so an account that moved PDS is followed once a refresh has seen the move.
 * `link` mode: `did()` is the single linked account (`IllegalStateException` when there is none or several;
   `forDid(did)` picks one). A link whose session ended throws `AtprotoSessionExpired`: link again. On the event loop
   with an application link or session store, call `resolve()`, `didAsync()` or `reactiveRecordsAsync()` first; the
@@ -90,12 +101,29 @@ public String publish(@QueryParam("title") String title) {
 
 `@Inject AtprotoSessions sessions` works without a request: `find(did)` (the newest live session), `records(did)`,
 `reactiveRecords(did)`, `xrpc(did)`, `revoke(did)`. A scheduled job catches `AtprotoSessionExpired` (no session, or the
-refresh token was refused: ask the author to sign in again) and `AtprotoTemporarilyUnavailable` (the DID directory or
-the authorization server could not be reached; the session is kept: retry later). Call these from worker threads.
+refresh token was refused: ask the author to sign in again) and `AtprotoTemporarilyUnavailable` (the DID directory,
+the authorization server's metadata or token endpoint could not be reached or answered 5xx, or another node's refresh
+did not finish in time; the session is kept: retry later). Call these from worker threads. The returned handles can be
+kept: each call reads the session and its current PDS.
 
-Access tokens are refreshed transparently: one refresh per session in the process, compare-and-set on the refresh token
-across nodes, the issuer's authority over the account's PDS re-checked before a refresh token is spent. DPoP nonces are
-kept per server; a `use_dpop_nonce` answer is retried once.
+Access tokens are refreshed transparently: one refresh per session in the process, the issuer's authority over the
+account's PDS re-checked before a refresh token is spent. A refresh replaces the stored handle only with a verified
+one (or `handle.invalid` when the handle definitively stopped resolving back); a transient failure of that check keeps
+it. DPoP nonces are kept per server; a `use_dpop_nonce` answer is retried once.
+
+=== Running several nodes
+
+Refresh tokens are single use; the reference authorization server revokes the whole grant when one is used twice.
+Across nodes sharing a session store, only the node holding the store's refresh lease
+(`tryAcquireRefreshLease(sessionId, refreshTokenHash, ttl)`, a base64url SHA-256 of the token, never the token) spends
+the refresh token; it re-reads the session, refreshes, stores the result with `replaceIfRefreshToken` and releases the
+lease. Other nodes poll the store for its new tokens, or fail with `AtprotoTemporarilyUnavailable` after
+`session.refresh-lease`.
+
+A store shared by several nodes *must* implement the lease atomically (a row lock or lease column, Redis
+`SET key NX PX ttl`). The default always grants it (right for one node): without an implementation two nodes may spend
+the same refresh token, the grant is revoked and the user signs in again. The compare-and-set alone only decides which
+node's tokens are kept.
 
 == Scopes
 
@@ -116,8 +144,9 @@ retry once with it (it is registered too).
 * CDI events (on a worker thread): `AtprotoLoggedIn(did, handle, Optional<String> appPrincipal)`,
   `AtprotoLoggedOut(did, appPrincipal)`, `AtprotoSessionRevoked(did, reason)`.
 * Stores (in-memory `@DefaultBean`s that WARN once in production; provide your own bean, blocking or `Reactive*`, to
-  survive restarts and run several nodes; encrypt tokens and DPoP keys at rest): `AtprotoSessionStore`,
-  `PendingAuthorizationStore`, `AtprotoAccountLinks`.
+  survive restarts and run several nodes; encrypt tokens and DPoP keys at rest): `AtprotoSessionStore` (with the
+  optional refresh lease, see above), `PendingAuthorizationStore`, `AtprotoAccountLinks`. The in-memory session store
+  drops a session when it reaches `session.max-age`, used or not.
 * `AtprotoRoleMapper` beans add roles to the built-in `user`.
 
 == Configuration
@@ -146,6 +175,7 @@ retry once with it (it is registered too).
 |`quarkus.atproto.oauth.session.cookie-name` |`atproto-session` |Session cookie name (the binding cookie is `<name>-binding`)
 |`quarkus.atproto.oauth.session.encryption-key` |generated in dev and test |Key encrypting the session cookie, at least 32 characters. Required in production
 |`quarkus.atproto.oauth.session.max-age` |`14d` |How long a session lasts
+|`quarkus.atproto.oauth.session.refresh-lease` |`30s` |Several nodes: how long a refresh lease lasts at most, and how long another node waits for its tokens
 |`quarkus.atproto.oauth.pending.ttl` |`10m` |How long a started sign-in waits for its callback
 |`quarkus.atproto.oauth.landing-page` |`/` |Where to go after a sign-in without `redirect`
 |`quarkus.atproto.oauth.error-page` |none |Where to send a failed sign-in; unset: 401 with the reason

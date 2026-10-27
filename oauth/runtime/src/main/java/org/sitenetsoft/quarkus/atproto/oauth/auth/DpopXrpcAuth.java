@@ -31,6 +31,8 @@ import io.smallrye.mutiny.Uni;
  * <li>{@code use_dpop_nonce} → retry once with the new nonce; {@code invalid_token} (expired) → refresh, retry
  * once.</li>
  * <li>The token is only ever sent to the session's PDS origin: a request elsewhere fails before sending.</li>
+ * <li>The PDS is the session's <b>current</b> one, read with the session on each request ({@link #pds()}), so a
+ * long-lived client follows an account that moved PDS (picked up by a refresh).</li>
  * </ul>
  */
 public final class DpopXrpcAuth implements XrpcAuth {
@@ -38,37 +40,47 @@ public final class DpopXrpcAuth implements XrpcAuth {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final String sessionId;
-    private final URI pds;
-    private final String pdsOrigin;
     private final SessionStores stores;
     private final Refresher refresher;
     private final NonceStore nonces;
     private volatile String lastSent;
     private volatile String rejected;
+    /** The PDS the last request was signed for (where {@link #observe} files the nonce). */
+    private volatile URI lastPds;
 
-    public DpopXrpcAuth(String sessionId, URI pds, SessionStores stores, Refresher refresher, NonceStore nonces) {
+    public DpopXrpcAuth(String sessionId, SessionStores stores, Refresher refresher, NonceStore nonces) {
         this.sessionId = sessionId;
-        this.pds = pds;
-        this.pdsOrigin = Origins.of(pds);
         this.stores = stores;
         this.refresher = refresher;
         this.nonces = nonces;
     }
 
+    /**
+     * The session's current PDS (refreshing first when the access token is about to expire, so a PDS move found by
+     * the refresh is followed): where the next request goes.
+     */
+    public Uni<URI> pds() {
+        return Uni.createFrom().deferred(this::current).map(AtprotoSession::pds);
+    }
+
+    /** The stored session, refreshed when needed. */
+    private Uni<AtprotoSession> current() {
+        return stores.sessions().find(sessionId)
+                .map(s -> s.orElseThrow(() -> new AtprotoSessionExpired(
+                        "The AT Protocol session is gone; sign in again")))
+                .chain(s -> needsRefresh(s) ? refresher.refresh(sessionId, s.accessToken())
+                        : Uni.createFrom().item(s));
+    }
+
     @Override
     public Uni<XrpcRequest> authorize(XrpcRequest request) {
-        return Uni.createFrom().deferred(() -> {
+        return Uni.createFrom().deferred(this::current).map(s -> {
+            String pdsOrigin = Origins.of(s.pds());
             if (!Origins.of(request.url()).equals(pdsOrigin)) {
-                return Uni.createFrom().failure(new IllegalArgumentException(
-                        "The session's access token is only sent to its PDS " + pdsOrigin + ", not to "
-                                + Origins.of(request.url())));
+                throw new IllegalArgumentException("The session's access token is only sent to its PDS " + pdsOrigin
+                        + ", not to " + Origins.of(request.url()));
             }
-            return stores.sessions().find(sessionId)
-                    .map(s -> s.orElseThrow(() -> new AtprotoSessionExpired(
-                            "The AT Protocol session is gone; sign in again")))
-                    .chain(s -> needsRefresh(s) ? refresher.refresh(sessionId, s.accessToken())
-                            : Uni.createFrom().item(s))
-                    .map(s -> sign(request, s));
+            return sign(request, s);
         });
     }
 
@@ -79,16 +91,21 @@ public final class DpopXrpcAuth implements XrpcAuth {
 
     private XrpcRequest sign(XrpcRequest request, AtprotoSession s) {
         String token = s.accessToken();
-        Optional<String> nonce = nonces.get(pds).or(() -> Optional.ofNullable(s.nonces().get(pdsOrigin)));
+        URI pds = s.pds();
+        Optional<String> nonce = nonces.get(pds).or(() -> Optional.ofNullable(s.nonces().get(Origins.of(pds))));
         String proof = DpopProofs.proof(s.dpopKey(), request.method(), request.url(), nonce, Optional.of(token),
                 Instant.now());
         lastSent = token;
+        lastPds = pds;
         return request.withHeader("Authorization", "DPoP " + token).withHeader("DPoP", proof);
     }
 
     @Override
     public void observe(XrpcResponse response) {
-        response.header("DPoP-Nonce").ifPresent(n -> nonces.put(pds, n));
+        URI pds = lastPds;
+        if (pds != null) {
+            response.header("DPoP-Nonce").ifPresent(n -> nonces.put(pds, n));
+        }
     }
 
     @Override
@@ -117,6 +134,7 @@ public final class DpopXrpcAuth implements XrpcAuth {
 
     @Override
     public String toString() {
-        return "DpopXrpcAuth[pds=" + pdsOrigin + "]";
+        URI pds = lastPds;
+        return "DpopXrpcAuth[pds=" + (pds == null ? "?" : Origins.of(pds)) + "]";
     }
 }

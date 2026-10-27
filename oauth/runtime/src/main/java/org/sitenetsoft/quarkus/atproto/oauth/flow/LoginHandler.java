@@ -47,6 +47,9 @@ import io.vertx.ext.web.RoutingContext;
  * <p>
  * {@code link} mode: the request must carry the application's own signed-in identity (401 otherwise, before anything
  * is sent anywhere); the pending entry records that user and the callback must be made by the same user.
+ * <p>
+ * The development client (no {@code client-base-url}) answers 400 when the login is not made on
+ * {@code 127.0.0.1} (its redirect URI's host), so the binding cookie lands where the callback arrives.
  */
 @Singleton
 public class LoginHandler implements Handler<RoutingContext> {
@@ -92,6 +95,11 @@ public class LoginHandler implements Handler<RoutingContext> {
         Optional<String> crossSite = crossSite(ctx);
         if (crossSite.isPresent()) {
             Responses.fail(ctx, config, "login", new LoginFailure(403, "cross_site_request", crossSite.get()));
+            return;
+        }
+        Optional<String> wrongHost = developmentHost(ctx);
+        if (wrongHost.isPresent()) {
+            Responses.fail(ctx, config, "login", new LoginFailure(400, "invalid_request", wrongHost.get()));
             return;
         }
         Context context = ctx.vertx().getOrCreateContext();
@@ -151,6 +159,23 @@ public class LoginHandler implements Handler<RoutingContext> {
         }
         return Optional.of("The sign-in must be started from this site (Origin " + AuthServerClient.abbreviate(origin)
                 + ")");
+    }
+
+    /**
+     * The development client's redirect URI is {@code http://127.0.0.1:<port>/...}: a login started on another host
+     * ({@code localhost}) would set the binding cookie there and fail at the callback. Empty when the host is right
+     * or this is a confidential client.
+     */
+    Optional<String> developmentHost(RoutingContext ctx) {
+        if (client.confidential()) {
+            return Optional.empty();
+        }
+        io.vertx.core.net.HostAndPort a = ctx.request().authority();
+        if (a != null && "127.0.0.1".equals(a.host())) {
+            return Optional.empty();
+        }
+        return Optional.of("Open the app at http://127.0.0.1:" + client.redirectUri().getPort()
+                + "/ to sign in with the development client");
     }
 
     private Uni<String> start(Map<String, String> params, String browserBinding, Optional<String> appPrincipal) {

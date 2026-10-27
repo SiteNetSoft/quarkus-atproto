@@ -46,5 +46,12 @@ The fake authorization server fetches `https://app.example.test/oauth-client-met
 the callback URL's path and query on that port with the binding cookie, and send the login form with
 `Origin: https://app.example.test`.
 
+**Limitation: cookie attributes are not exercised.** The test `Browser` keeps cookies by name only: it ignores
+`Path`, `SameSite` and `Secure` (and sends `Secure` cookies over the loopback http port). A regression in those
+attributes, or a browser withholding a cookie on a cross-site navigation (`SameSite=Strict` on the OAuth callback; see
+the link mode's same-origin bounce in `oauth/README.md`), is invisible to these tests. The sample's link mode also uses
+basic auth, which a browser resends regardless of `SameSite`; the bounce is covered by the extension's own tests
+(`LinkModeTest`).
+
 Native: `mvn verify -Dnative -pl integration-tests -am -Dquarkus.native.additional-build-args=-J-XX:TieredStopAtLevel=1,--parallelism=8`
 runs both executions against the native executable (CI's native job).

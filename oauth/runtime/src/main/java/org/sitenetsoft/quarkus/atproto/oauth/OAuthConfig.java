@@ -123,6 +123,14 @@ public interface OAuthConfig {
         /** How long a session lasts. */
         @WithDefault("14d")
         Duration maxAge();
+
+        /**
+         * Several nodes sharing a session store: how long a node's refresh lease lasts at most
+         * ({@code AtprotoSessionStore.tryAcquireRefreshLease}), and how long another node needing the same session
+         * waits for that refresh's tokens before failing with {@code AtprotoTemporarilyUnavailable}.
+         */
+        @WithDefault("30s")
+        Duration refreshLease();
     }
 
     interface Pending {

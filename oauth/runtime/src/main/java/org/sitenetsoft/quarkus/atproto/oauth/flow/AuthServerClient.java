@@ -69,7 +69,7 @@ public class AuthServerClient {
 
         /** The OAuth error of a failed answer as an exception. */
         public OAuthServerError error(String name) {
-            String error = body.path("error").isTextual() ? body.get("error").asText() : "http_" + status;
+            String error = body.path("error").isTextual() ? errorCode(body.get("error").asText()) : "http_" + status;
             String description = body.path("error_description").isTextual()
                     ? abbreviate(body.get("error_description").asText()) : null;
             return new OAuthServerError(name, status, error, description);
@@ -125,6 +125,16 @@ public class AuthServerClient {
                     .append(URLEncoder.encode(v, StandardCharsets.UTF_8));
         });
         return sb.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static final java.util.regex.Pattern ERROR_CODE = java.util.regex.Pattern.compile("[a-z0-9_]{1,64}");
+
+    /**
+     * An authorization server's OAuth {@code error} code as we log, show and forward it: kept when it matches
+     * {@code [a-z0-9_]{1,64}}, else {@code invalid_response} (anyone can run an authorization server).
+     */
+    public static String errorCode(String error) {
+        return error != null && ERROR_CODE.matcher(error).matches() ? error : "invalid_response";
     }
 
     /** Server text is shown to users and logged: printable characters, at most 200. */

@@ -24,7 +24,9 @@ Status: experimental, version 0.1.
 - **Localhost development client** (dev and test mode when `client-base-url` is unset or loopback): `client_id` =
   `http://localhost?redirect_uri=http://127.0.0.1:<port><callback-path>&scope=<scope>`, a public client without keys.
   bsky.social accepts it, so a developer signs in with a real account from a laptop (see the docs' live check). Refused
-  in production (normal launch mode). In dev mode the metadata path answers 404.
+  in production (normal launch mode). In dev mode the metadata path answers 404. Its redirect URI is on `127.0.0.1`,
+  so the sign-in must start there too: a login posted to another host (`localhost`) answers 400 "Open the app at
+  http://127.0.0.1:<port>/ to sign in with the development client" (no pushed authorization request, no cookie).
 
 The registered scope (metadata `scope` or the development `client_id`'s) is `scope` plus `fallback-scope`: an
 authorization server grants only what the client registered. The **granted** scope can be narrower than the request;
@@ -41,12 +43,21 @@ the session records it (`AtprotoUser.scope()`) and writes are checked against it
   plus whatever your `AtprotoRoleMapper` beans add). `POST /atproto/logout` revokes (best effort), deletes the session
   and clears the cookie.
 - **`link`**: the user is already signed in through the application's own mechanism (form, OIDC, basic, anything
-  producing a `SecurityIdentity`) and links a Bluesky account to that user.
+  producing a `SecurityIdentity`) and links a Bluesky account to that user. Quarkus form authentication works with its
+  default `SameSite=Strict` cookie (see the same-origin bounce below); nothing to configure.
   - The login endpoint requires that identity (401 otherwise, nothing is sent anywhere). The started login records
     the application user, and the callback must be made by **the same user** and by the browser that started it
     (the binding cookie). That stops a callback URL from being completed by another user or browser; what stops
     another *site* from starting a link of the attacker's account in the victim's signed-in browser is the
     same-origin rule below.
+  - **Same-origin bounce.** The callback is a navigation that starts on the authorization server's site, so browsers
+    withhold the application's `SameSite=Strict` cookies (Quarkus form auth's default,
+    `quarkus.http.auth.form.cookie-same-site=strict`) and the callback sees no application user. When the callback
+    carries the binding cookie but no application identity, nothing is consumed: it answers 200 with a small page
+    (`<meta http-equiv="refresh">` plus a link, no script; `Cache-Control: no-store`, `Referrer-Policy: no-referrer`)
+    that loads the same callback URL plus `bounce=1`. That navigation starts on the application's own origin, so the
+    `Strict` cookie is sent and the link completes. With the marker and still no application user: 401. At most one
+    bounce; never in `login` mode.
   - The callback stores the session and a **link** application principal → DID → session (`AtprotoAccountLinks`);
     linking the same account again replaces the link's session. No session cookie is set, and the extension's
     authentication mechanism contributes no identity and no challenge: the application's own mechanism stays in
@@ -93,7 +104,9 @@ public String publish(@QueryParam("title") String title) {
 ```
 
 - `did()`, `handle()`, `pds()`, `scope()` (granted), `records()` / `reactiveRecords()` (DPoP, writes outside the
-  granted scope refused with `AtprotoScopeException` before anything is sent), `xrpc()`.
+  granted scope refused with `AtprotoScopeException` before anything is sent), `xrpc()`. Each records call goes to
+  the session's current PDS (read with the session), so an account that moved PDS is followed once a refresh has
+  seen the move.
 - `link` mode on the **event loop** (an endpoint returning `Uni`) with an application link or session store: use
   `user.reactiveRecordsAsync()`, `user.didAsync()`, or `user.resolve()` first (loads the link and session without
   blocking and caches them for the request; then every accessor answers from memory). The synchronous accessors there
@@ -116,16 +129,21 @@ try {
 } catch (AtprotoSessionExpired e) {
     // no live session, or the refresh token was refused (invalid_grant): ask the author to sign in again
 } catch (AtprotoTemporarilyUnavailable e) {
-    // the DID directory or the authorization server metadata could not be reached; the session is kept: retry later
+    // the DID directory, the authorization server's metadata or its token endpoint could not be reached (or answered
+    // 5xx), or another node's refresh did not finish in time; the session is kept: retry later
 }
 ```
 
 - `find(did)` → the account's most recently created session within `session.max-age` (an account may be signed in
   from several browsers, or linked to several users); `records(did)`, `reactiveRecords(did)`, `xrpc(did)` use it;
   `revoke(did)` ends every session of the account (revoked at the authorization server, best effort; fires
-  `AtprotoSessionRevoked`).
-- Access tokens are refreshed as in requests: one refresh per session in the process, compare-and-set on the refresh
-  token across nodes, the issuer's authority over the account's PDS re-checked before a refresh token is spent.
+  `AtprotoSessionRevoked`). The handles they return can be kept: each call reads the session (and its current PDS).
+- Access tokens are refreshed as in requests: one refresh per session in the process, the issuer's authority over the
+  account's PDS re-checked before a refresh token is spent. Across nodes see "Running several nodes".
+- Refresh failures: `invalid_grant` (and a failed check) end the session (`AtprotoSessionExpired`); a token endpoint
+  that answers 5xx, times out or cannot be reached keeps it (`AtprotoTemporarilyUnavailable`). On a refresh the stored
+  handle is replaced only by a verified handle, or by `handle.invalid` when the handle definitively stopped resolving
+  back; a transient failure of that check keeps it.
 - These methods read the session store: call them from worker or background threads, not the event loop.
 
 ## Events
@@ -144,11 +162,30 @@ In-memory `@DefaultBean`s that WARN once in production; provide your own `@Appli
 `Reactive*`) to persist across restarts and nodes. Implementations must encrypt tokens and DPoP private keys at rest.
 
 - `AtprotoSessionStore` / `ReactiveAtprotoSessionStore`: `save`, `find(id)`, `findByDid`, `replaceIfRefreshToken`
-  (atomic compare-and-set), `delete`.
+  (atomic compare-and-set: decides whose tokens are kept), `delete`, and the optional refresh lease
+  `tryAcquireRefreshLease(sessionId, refreshTokenHash, ttl)` / `releaseRefreshLease(...)` (default: always granted,
+  right for one node; see below). The in-memory default drops a session when it reaches `session.max-age`, used or
+  not.
 - `PendingAuthorizationStore`: started logins between the login endpoint and the callback.
 - `AtprotoAccountLinks` / `ReactiveAtprotoAccountLinks` (`link` mode): `link(appPrincipal, did, sessionId)`,
   `findByPrincipal(appPrincipal)`, `sessionFor(appPrincipal, did)`, `unlink(appPrincipal, did)`. A link outlives its
   session (see above).
+
+### Running several nodes
+
+Refresh tokens are single use, and the reference authorization server revokes the **whole grant** when one is used
+twice. Within one process the extension runs one refresh per session at a time. Across nodes sharing a session store,
+only the node holding the store's **refresh lease** spends the refresh token: it takes
+`tryAcquireRefreshLease(sessionId, refreshTokenHash, ttl)` (the hash is base64url SHA-256; the token itself never
+reaches the lease), re-reads the session, refreshes and stores with `replaceIfRefreshToken`, then releases the lease.
+Another node that needs the session meanwhile does not get the lease: it polls the store for the holder's new tokens
+and uses them, or fails with `AtprotoTemporarilyUnavailable` when none arrive within `session.refresh-lease`.
+
+**A store shared by several nodes must implement the lease** atomically: for example a row lock or a lease column
+(`UPDATE ... SET lease_until = now() + ttl WHERE id = ? AND (lease_until IS NULL OR lease_until < now())`), or Redis
+`SET atproto-refresh:<sessionId> <hash> NX PX <ttl>`. The default always grants it, so without an implementation two
+nodes may both spend the same refresh token, the authorization server revokes the grant and the user signs in again.
+The compare-and-set alone only decides which node's tokens are kept.
 
 ## Configuration
 
@@ -174,6 +211,7 @@ In-memory `@DefaultBean`s that WARN once in production; provide your own `@Appli
 | `quarkus.atproto.oauth.session.cookie-name` | `atproto-session` | Session cookie name (the binding cookie is `<name>-binding`) |
 | `quarkus.atproto.oauth.session.encryption-key` | generated per run in dev and test | Key encrypting the session cookie, at least 32 characters. Required in production |
 | `quarkus.atproto.oauth.session.max-age` | `14d` | How long a session lasts |
+| `quarkus.atproto.oauth.session.refresh-lease` | `30s` | Several nodes: how long a refresh lease lasts at most, and how long another node waits for its tokens |
 | `quarkus.atproto.oauth.pending.ttl` | `10m` | How long a started sign-in waits for its callback |
 | `quarkus.atproto.oauth.landing-page` | `/` | Where to go after a sign-in without `redirect` |
 | `quarkus.atproto.oauth.error-page` | none | Where to send a failed sign-in; unset: 401 with the reason |

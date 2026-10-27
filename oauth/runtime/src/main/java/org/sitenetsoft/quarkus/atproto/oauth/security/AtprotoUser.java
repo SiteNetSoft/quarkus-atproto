@@ -191,12 +191,15 @@ public class AtprotoUser {
     /** The account's records, blocking (never on the event loop). */
     public AtprotoRecords records() {
         View v = view();
-        return records.blockingForRepo(v.did(), v.pds(), auth(), new ScopeWriteGuard(v.scope()));
+        DpopXrpcAuth a = auth();
+        return records.blockingForRepo(v.did(), a::pds, a, new ScopeWriteGuard(v.scope()));
     }
 
+    /** The account's records, reactive; each call goes to the session's current PDS. */
     public ReactiveAtprotoRecords reactiveRecords() {
         View v = view();
-        return records.forRepo(v.did(), v.pds(), auth(), new ScopeWriteGuard(v.scope()));
+        DpopXrpcAuth a = auth();
+        return records.forRepo(v.did(), a::pds, a, new ScopeWriteGuard(v.scope()));
     }
 
     /**
@@ -211,7 +214,7 @@ public class AtprotoUser {
         DpopXrpcAuth a = auth;
         if (a == null) {
             View v = view();
-            a = new DpopXrpcAuth(v.sessionId(), v.pds(), stores, refresher, nonces);
+            a = new DpopXrpcAuth(v.sessionId(), stores, refresher, nonces);
             auth = a;
         }
         return a;

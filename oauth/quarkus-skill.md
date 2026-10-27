@@ -4,7 +4,10 @@
   DID, cookie session, `POST /atproto/logout`) or `link` (the app's own mechanism signs users in; `/atproto/login`
   needs that identity, else 401 (and same-origin POST, see below); the callback links app principal → DID → session and must be made by the same app
   user; no cookie, the atproto mechanism adds no identity; `POST /atproto/unlink[?did=]` → 204/400/401/404). Pick
-  `link` when the app has its own accounts (form/OIDC); QuarkPress uses `link`.
+  `link` when the app has its own accounts (form/OIDC); QuarkPress uses `link`. Form auth's default
+  `SameSite=Strict` cookie is fine: a callback without the app identity (Strict cookie withheld on the cross-site
+  navigation) answers a same-origin bounce page (200, meta refresh to the callback + `bounce=1`) instead of failing;
+  with the marker and still no identity → 401.
 - Starting a sign-in: only `POST {login-path}` (form `handle`, optional `redirect`) from the app's own page;
   same-origin required (`Sec-Fetch-Site: same-origin`, else `Origin` = the app's origin; neither → 403); `GET` → 405.
   Never link to the login endpoint with `<a href>`: render a form.
@@ -17,7 +20,8 @@
 - Background jobs (no request context): `@Inject AtprotoSessions sessions; sessions.records(did)`,
   `reactiveRecords(did)`, `xrpc(did)`, `find(did)` (newest live session), `revoke(did)`. Catch
   `AtprotoSessionExpired` (no session / `invalid_grant`: ask the author to sign in again) and
-  `AtprotoTemporarilyUnavailable` (outage, session kept: retry). Call from worker threads, not the event loop.
+  `AtprotoTemporarilyUnavailable` (outage incl. a 5xx/unreachable token endpoint, session kept: retry). Call from
+  worker threads, not the event loop. The returned handles may be kept: each call goes to the session's current PDS.
 - Writes outside the granted scope fail with `AtprotoScopeException` before sending; request least-privilege scopes
   in `quarkus.atproto.oauth.scope` (e.g. `atproto repo:site.standard.document?action=create&action=update
   blob:image/*`). Granted scope may differ from requested: check `user.scope()`.
@@ -25,6 +29,9 @@
   `AtprotoSessionRevoked(did, reason)`; observers run on a worker thread.
 - SPIs (in-memory `@DefaultBean`s WARN in prod): `AtprotoSessionStore`, `PendingAuthorizationStore`,
   `AtprotoAccountLinks` (+ `Reactive*`); encrypt tokens and DPoP keys at rest; `replaceIfRefreshToken` must be atomic.
+  Several nodes on one store: implement `tryAcquireRefreshLease`/`releaseRefreshLease` atomically (row lock, Redis
+  `SET NX PX`); the default always grants it, so without it two nodes can spend one refresh token and the
+  authorization server revokes the grant. `session.refresh-lease` (30s) bounds the lease and the other nodes' wait.
 - Roles: add `@ApplicationScoped AtprotoRoleMapper` beans (`Set<String> roles(Did, Handle)`); roles are united with
   the built-in `user`.
 - Pitfalls: the localhost development client only works in dev/test; production needs
@@ -35,7 +42,8 @@
   the authorization server refuses anything else. `invalid_scope` from bsky.social → set
   `quarkus.atproto.oauth.fallback-scope=atproto transition:generic`. Always read the granted scope (`user.scope()`).
 - Dev mode: open the app at `http://127.0.0.1:<port>` (the development client's redirect URI host) so the sign-in's
-  binding cookie reaches the callback; a 401 at the callback means another browser/host/tab or an expired sign-in.
+  binding cookie reaches the callback; a login posted to `localhost` answers 400 saying so; a 401 at the callback
+  means another browser/tab or an expired sign-in.
 - Packaged-app tests (`@QuarkusIntegrationTest`) run in normal launch mode: configure a confidential client
   (`client-base-url`, a generated key, `session.encryption-key`) and let the fake authorization server reach the
   metadata with `FakeAuthorizationServer.rewriteClientFetches(base, "http://127.0.0.1:<port>")`; see

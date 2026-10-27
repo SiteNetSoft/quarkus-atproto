@@ -50,6 +50,8 @@ final class OAuthTestSupport {
                         .addClasses(TestTxtResolver.class, app, Browser.class, LinkBrowser.class,
                                 OAuthTestSupport.class)
                         .addClasses(extra))
+                // the development client's redirect URI is on 127.0.0.1: sign in there (RestAssured follows this host)
+                .overrideConfigKey("quarkus.http.host", "127.0.0.1")
                 .overrideConfigKey("quarkus.safe-fetch.https-only", "false")
                 .overrideConfigKey("quarkus.safe-fetch.allow-private-addresses", "true")
                 .overrideConfigKey("quarkus.did.plc.url", fake.plcUrl().toString())

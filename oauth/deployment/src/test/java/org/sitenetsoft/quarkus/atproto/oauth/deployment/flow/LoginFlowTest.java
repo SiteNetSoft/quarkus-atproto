@@ -133,6 +133,33 @@ public class LoginFlowTest {
     }
 
     @Test
+    void forgedErrorCodeIsSanitised() {
+        // anyone can run an authorization server (or edit the callback URL): its error code is not trusted text
+        FAKE.as().denyNext();
+        URI callbackUrl = Browser.authorize(Browser.startLogin(HANDLE));
+        String evil = java.net.URLEncoder.encode("evil\nINFO forged log line <b>", java.nio.charset.StandardCharsets.UTF_8);
+        URI forged = URI.create(callbackUrl.toString().replace("error=access_denied", "error=" + evil));
+        Response r = Browser.callback(forged);
+        assertEquals(401, r.statusCode(), r.body().asString());
+        assertTrue(r.body().asString().contains("invalid_response"), r.body().asString());
+        assertTrue(!r.body().asString().contains("evil") && !r.body().asString().contains("forged"),
+                r.body().asString());
+    }
+
+    @Test
+    void developmentClientNeedsTheLoopbackAddress() {
+        // the development client's redirect URI is http://127.0.0.1:<port>/...: a login on localhost would set the
+        // binding cookie on the wrong host
+        Response r = Browser.sameOrigin(io.restassured.RestAssured.given().redirects().follow(false))
+                .header("Host", "localhost:" + Browser.port()).formParam("handle", HANDLE).post("/atproto/login");
+        assertEquals(400, r.statusCode(), r.body().asString());
+        assertEquals("Open the app at http://127.0.0.1:" + Browser.port()
+                + "/ to sign in with the development client", r.body().asString());
+        assertNull(Browser.setCookie(r, Browser.BINDING));
+        assertEquals(0, FAKE.as().parCount());
+    }
+
+    @Test
     void consentDeniedIs401AndNoSession() {
         FAKE.as().denyNext();
         URI callbackUrl = Browser.authorize(Browser.startLogin(HANDLE));
@@ -251,7 +278,7 @@ public class LoginFlowTest {
     void ownOriginAccepted() {
         // an older browser without Fetch Metadata: the Origin header of this application (the development client:
         // the request's own host)
-        Response r = given().redirects().follow(false).header("Origin", "http://localhost:" + Browser.port())
+        Response r = given().redirects().follow(false).header("Origin", "http://127.0.0.1:" + Browser.port())
                 .contentType("application/x-www-form-urlencoded").formParam("handle", HANDLE).post("/atproto/login");
         assertEquals(302, r.statusCode(), r.body().asString());
         assertEquals(302, Browser.callback(Browser.authorize(r)).statusCode());

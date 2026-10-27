@@ -58,6 +58,32 @@ class SessionsTest {
     }
 
     @Test
+    void sessionsExpireAtMaxAgeWithoutBeingTouched() {
+        java.util.concurrent.atomic.AtomicLong nanos = new java.util.concurrent.atomic.AtomicLong();
+        InMemoryAtprotoSessionStore store = new InMemoryAtprotoSessionStore(Duration.ofHours(1), nanos::get,
+                com.github.benmanes.caffeine.cache.Scheduler.disabledScheduler());
+        store.save(session("a", "r1"));
+        nanos.addAndGet(Duration.ofMinutes(30).toNanos());
+        store.save(session("b", "r1")); // created now: 30 minutes younger than a
+        store.cleanUp();
+        assertEquals(2, store.size());
+        nanos.addAndGet(Duration.ofMinutes(31).toNanos());
+        store.cleanUp();
+        assertEquals(1, store.size(), "a, past max-age and never touched, is dropped");
+        assertTrue(store.find("a").isEmpty());
+        assertEquals(1, store.findByDid(DID).size());
+        nanos.addAndGet(Duration.ofMinutes(60).toNanos());
+        store.cleanUp();
+        assertEquals(0, store.size());
+        // a session already past max-age is not kept at all
+        AtprotoSession old = session("c", "r1");
+        store.save(new AtprotoSession(old.id(), old.did(), old.handle(), old.pds(), old.issuer(), old.grantedScope(),
+                old.accessToken(), old.refreshToken(), old.accessExpiry(), old.dpopPrivateJwk(), old.nonces(),
+                Instant.now().minus(Duration.ofHours(2))));
+        assertTrue(store.find("c").isEmpty());
+    }
+
+    @Test
     void pendingTakeRemovesAndExpires() {
         InMemoryPendingAuthorizationStore store = new InMemoryPendingAuthorizationStore();
         PendingAuthorization p = new PendingAuthorization("https://as.example.com", URI.create("https://as.example.com/t"),

@@ -79,6 +79,7 @@ public final class FakePds {
   private final Map<String, Optional<Object>> protectedResourceOverrides =
       new ConcurrentHashMap<>();
   private volatile int protectedResourceStatus = 200;
+  private volatile int wellKnownStatus = 200;
   private volatile String protectedResourceRedirect;
   private volatile FakeAuthorizationServer trustedAs;
 
@@ -146,6 +147,14 @@ public final class FakePds {
   }
 
   /** The protected-resource metadata answers this status (e.g. 404) instead of the document (until clear()). */
+  /**
+   * Handle well-known answers ({@code /.well-known/atproto-did}) get {@code status} instead (for example 503: a
+   * transient failure of the handle check), until {@link FakeAtproto#clear()}.
+   */
+  public void wellKnownStatus(int status) {
+    wellKnownStatus = status;
+  }
+
   public void protectedResourceStatus(int status) {
     protectedResourceStatus = status;
   }
@@ -174,6 +183,10 @@ public final class FakePds {
   }
 
   private void wellKnown(RoutingContext ctx, String handle) {
+    if (wellKnownStatus != 200) {
+      ctx.response().setStatusCode(wellKnownStatus).putHeader("Content-Type", "text/plain").end("Unavailable");
+      return;
+    }
     Optional<FakeAccount> account = fake.findAccount(handle.toLowerCase(Locale.ROOT));
     if (account.isEmpty() || !account.get().handle().value().equals(handle.toLowerCase(Locale.ROOT))) {
       ctx.response().setStatusCode(404).putHeader("Content-Type", "text/plain").end("User not found");
@@ -543,6 +556,7 @@ public final class FakePds {
     authorizationServers = null;
     protectedResourceOverrides.clear();
     protectedResourceStatus = 200;
+    wellKnownStatus = 200;
     protectedResourceRedirect = null;
     trustedAs = null;
     records.clear();

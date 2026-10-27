@@ -143,9 +143,44 @@ public class LinkModeTest {
         assertTrue(links.findByPrincipal(ANN).isEmpty());
         assertTrue(sessions.findByDid(ALICE.did()).isEmpty());
         assertEquals(0, FAKE.as().tokenCount());
-        // signed out of the application at the callback: refused as well
+        // signed out of the application at the callback, even after the same-origin bounce: refused as well
         URI again = Browser.authorize(startLink(ANN, HANDLE));
-        assertEquals(401, callback(null, again).statusCode());
+        assertEquals(200, callback(null, again).statusCode(), "the same-origin bounce");
+        assertEquals(401, callback(null, URI.create(again + "&bounce=1")).statusCode());
+        assertEquals(0, FAKE.as().tokenCount());
+    }
+
+    @Test
+    void callbackWithoutAppCookieBouncesSameOrigin() {
+        // form auth's SameSite=Strict cookie is withheld on the navigation from the authorization server's site
+        URI callbackUrl = Browser.authorize(startLink(ANN, HANDLE));
+        Response bounce = callback(null, callbackUrl);
+        assertEquals(200, bounce.statusCode(), bounce.body().asString());
+        assertEquals("no-store", bounce.header("Cache-Control"));
+        assertEquals("no-referrer", bounce.header("Referrer-Policy"));
+        assertTrue(bounce.header("Content-Type").startsWith("text/html"), bounce.header("Content-Type"));
+        String target = callbackUrl.getRawPath() + "?" + callbackUrl.getRawQuery() + "&bounce=1";
+        String escaped = target.replace("&", "&amp;");
+        String page = bounce.body().asString();
+        assertTrue(page.contains("<meta http-equiv=\"refresh\" content=\"0;url=" + escaped + "\">"), page);
+        assertTrue(page.contains("<a href=\"" + escaped + "\">"), page);
+        assertTrue(!page.contains("<script"), page);
+        // nothing consumed: the binding cookie stays, no code exchanged
+        assertNull(Browser.setCookie(bounce, Browser.BINDING));
+        assertEquals(0, FAKE.as().tokenCount());
+        // the bounced request starts on the application's origin: the app's cookie is sent and the link completes
+        Response done = callback(ANN, URI.create("http://127.0.0.1:" + Browser.port() + target));
+        assertEquals(302, done.statusCode(), done.body().asString());
+        assertEquals(List.of(ALICE.did()), links.findByPrincipal(ANN));
+        assertEquals(1, FAKE.as().tokenCount());
+    }
+
+    @Test
+    void bounceOnlyOnce() {
+        URI callbackUrl = Browser.authorize(startLink(ANN, HANDLE));
+        Response r = callback(null, URI.create(callbackUrl + "&bounce=1"));
+        assertEquals(401, r.statusCode(), r.body().asString());
+        assertTrue(links.findByPrincipal(ANN).isEmpty());
         assertEquals(0, FAKE.as().tokenCount());
     }
 

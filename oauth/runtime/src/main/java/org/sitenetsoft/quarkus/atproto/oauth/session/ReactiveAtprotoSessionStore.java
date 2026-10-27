@@ -1,5 +1,6 @@
 package org.sitenetsoft.quarkus.atproto.oauth.session;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,4 +20,14 @@ public interface ReactiveAtprotoSessionStore {
     Uni<Boolean> replaceIfRefreshToken(AtprotoSession updated, String expectedRefreshToken);
 
     Uni<Void> delete(String id);
+
+    /** {@link AtprotoSessionStore#tryAcquireRefreshLease}; a store shared by several nodes must implement it. */
+    default Uni<Boolean> tryAcquireRefreshLease(String sessionId, String refreshTokenHash, Duration ttl) {
+        return Uni.createFrom().item(Boolean.TRUE);
+    }
+
+    /** {@link AtprotoSessionStore#releaseRefreshLease}. */
+    default Uni<Void> releaseRefreshLease(String sessionId, String refreshTokenHash) {
+        return Uni.createFrom().voidItem();
+    }
 }

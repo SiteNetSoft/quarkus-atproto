@@ -155,6 +155,7 @@ public final class FakeAuthorizationServer {
   private volatile Did wrongSub;
   private volatile boolean dropAtprotoScope;
   private volatile boolean dropSubOnRefresh;
+  private volatile int tokenEndpointStatus = 200;
   private final AtomicBoolean denyNext = new AtomicBoolean();
   private volatile Duration accessTokenTtl = Duration.ofMinutes(15);
   private final List<String> rejectedScopePrefixes = new CopyOnWriteArrayList<>();
@@ -348,6 +349,9 @@ public final class FakeAuthorizationServer {
   // ---- token ------------------------------------------------------------------------------------------------------
 
   private void token(RoutingContext ctx) {
+    if (tokenEndpointStatus != 200) {
+      throw new OAuthError(tokenEndpointStatus, "temporarily_unavailable", "The token endpoint is down");
+    }
     Map<String, List<String>> form = Http.form(Http.bodyText(ctx));
     DpopVerifier.Proof proof = dpop.verify(ctx.request().getHeader("DPoP"), "POST", Http.requestUrl(ctx), null);
     Client client = resolveClient(required(form, "client_id"));
@@ -740,6 +744,14 @@ public final class FakeAuthorizationServer {
     dropSubOnRefresh = true;
   }
 
+  /**
+   * The token endpoint answers {@code status} (for example 503) with {@code temporarily_unavailable} before looking at
+   * the request: nothing is exchanged or spent (until {@link FakeAtproto#clear()}).
+   */
+  public void tokenEndpointStatus(int status) {
+    tokenEndpointStatus = status;
+  }
+
   /** Token responses carry the granted scope without {@code atproto}. */
   public void dropAtprotoScope() {
     dropAtprotoScope = true;
@@ -809,6 +821,7 @@ public final class FakeAuthorizationServer {
     wrongSub = null;
     dropAtprotoScope = false;
     dropSubOnRefresh = false;
+    tokenEndpointStatus = 200;
     denyNext.set(false);
     accessTokenTtl = Duration.ofMinutes(15);
     rejectedScopePrefixes.clear();

@@ -47,11 +47,21 @@ import io.vertx.ext.web.RoutingContext;
  * started the login (else 401 before the code is exchanged). The session is then stored and <b>linked</b> to that
  * user ({@link AtprotoAccountLinks}); an earlier session of the same link is deleted. No cookie of this extension is
  * set (only the binding cookie is cleared).
+ * <p>
+ * {@code link} mode, <b>same-origin bounce</b>: the callback is a navigation started on the authorization server's
+ * site, so the browser withholds the application's {@code SameSite=Strict} cookies (Quarkus form authentication's
+ * default). When the callback carries the binding cookie but no application identity, and no {@value #BOUNCE}
+ * marker, nothing is consumed: a small page answers (200, {@code no-store}, {@code no-referrer}) that navigates to
+ * the same callback URL plus {@code &}{@value #BOUNCE}{@code =1}. That navigation starts on this application's own
+ * origin, so the {@code Strict} cookies are sent. With the marker and still no identity: 401. Never in {@code login}
+ * mode.
  */
 @Singleton
 public class CallbackHandler implements Handler<RoutingContext> {
 
     private static final Logger LOG = Logger.getLogger(CallbackHandler.class);
+    /** Query marker of the {@code link}-mode same-origin bounce (at most one bounce per callback). */
+    static final String BOUNCE = "bounce";
 
     private final OAuthConfig config;
     private final SessionStores stores;
@@ -88,6 +98,17 @@ public class CallbackHandler implements Handler<RoutingContext> {
         AtomicBoolean bound = new AtomicBoolean();
         Uni<Optional<String>> appPrincipal = link ? AppIdentity.principal(ctx, identities)
                 : Uni.createFrom().item(Optional.empty());
+        if (link) {
+            // read on the event loop, before any hop to another thread
+            Optional<String> bounceTo = bounceTarget(ctx);
+            if (bounceTo.isPresent()) {
+                appPrincipal = appPrincipal.invoke(p -> {
+                    if (p.isEmpty()) {
+                        throw new Bounce(bounceTo.get());
+                    }
+                });
+            }
+        }
         // the previous session is deleted only after a fully successful login
         complete(ctx, bound, appPrincipal)
                 .chain(done -> previous.map(id -> stores.sessions().delete(id))
@@ -99,11 +120,73 @@ public class CallbackHandler implements Handler<RoutingContext> {
                     }
                     Responses.redirect(ctx, done.target());
                 }), error -> Responses.on(context, () -> {
+                    if (error instanceof Bounce b) {
+                        bounce(ctx, b.target);
+                        return;
+                    }
                     if (bound.get()) {
                         cookie.clearBinding(ctx);
                     }
                     Responses.fail(ctx, config, "login callback", error);
                 }));
+    }
+
+    /**
+     * {@code link} mode: the URL of the same-origin bounce (this callback's path and query plus the marker), when the
+     * request carries a binding cookie and no marker yet; empty otherwise.
+     */
+    private Optional<String> bounceTarget(RoutingContext ctx) {
+        String path = ctx.request().path();
+        String query = ctx.request().query();
+        if (ctx.queryParams().contains(BOUNCE) || cookie.bindingHash(ctx.request()).isEmpty() || path == null
+                || !path.startsWith("/") || path.startsWith("//") || path.startsWith("/\\")) {
+            return Optional.empty();
+        }
+        return Optional.of(path + "?" + (query == null || query.isEmpty() ? "" : query + "&") + BOUNCE + "=1");
+    }
+
+    /** Signals the bounce (no pending entry was taken). */
+    private static final class Bounce extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+        private final String target;
+
+        Bounce(String target) {
+            super("same-origin bounce", null, false, false);
+            this.target = target;
+        }
+    }
+
+    /** The same-origin bounce page: a meta refresh to {@code target} and a visible link, no script. */
+    private static void bounce(RoutingContext ctx, String target) {
+        if (ctx.response().ended()) {
+            return;
+        }
+        String url = html(target);
+        LOG.debug("AT Protocol account link callback without the application's identity: same-origin bounce");
+        ctx.response().setStatusCode(200).putHeader("Content-Type", "text/html; charset=utf-8")
+                .putHeader("Cache-Control", "no-store").putHeader("Referrer-Policy", "no-referrer")
+                .end("<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\">"
+                        + "<meta name=\"referrer\" content=\"no-referrer\">"
+                        + "<meta http-equiv=\"refresh\" content=\"0;url=" + url + "\">"
+                        + "<title>Finishing the account link</title></head>"
+                        + "<body><p><a href=\"" + url + "\">Continue</a></p></body></html>\n");
+    }
+
+    /** HTML-escapes text for an attribute value. */
+    static String html(String s) {
+        StringBuilder sb = new StringBuilder(s.length() + 16);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '&' -> sb.append("&amp;");
+                case '<' -> sb.append("&lt;");
+                case '>' -> sb.append("&gt;");
+                case '"' -> sb.append("&quot;");
+                case '\'' -> sb.append("&#39;");
+                default -> sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     private Uni<Done> complete(RoutingContext ctx, AtomicBoolean bound, Uni<Optional<String>> appPrincipalUni) {
@@ -145,8 +228,8 @@ public class CallbackHandler implements Handler<RoutingContext> {
                         + " is not the authorization server the login was sent to (" + pending.issuer() + ")");
             }
             if (error != null) {
-                throw new LoginFailure(401, AuthServerClient.abbreviate(error), "The sign-in was not completed: "
-                        + AuthServerClient.abbreviate(error)
+                String errorCode = AuthServerClient.errorCode(error);
+                throw new LoginFailure(401, errorCode, "The sign-in was not completed: " + errorCode
                         + (description == null ? "" : " (" + AuthServerClient.abbreviate(description) + ")"));
             }
             if (code == null || code.isEmpty()) {

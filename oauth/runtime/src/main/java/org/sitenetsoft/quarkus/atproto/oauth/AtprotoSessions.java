@@ -30,11 +30,14 @@ import org.sitenetsoft.quarkus.atproto.xrpc.api.XrpcClient;
  * consumer. Needs no request context and no cookie. When the account is signed in several times (several browsers, or
  * linked to several application users) the most recently created live session is used.
  * <p>
- * The clients refresh the access token as requests do (one refresh per session, compare-and-set across nodes). A call
- * fails with {@link AtprotoSessionExpired} when the account has no live session or its refresh token was refused
- * ({@code invalid_grant}: revoked, expired): the job should ask the author to sign in again; and with
- * {@link AtprotoTemporarilyUnavailable} when the session could not be refreshed now (directory or metadata outage;
- * the session is kept): retry later. Lookups read the session store, so call these methods from worker or background
+ * The clients refresh the access token as requests do (one refresh per session in the process; across nodes only the
+ * holder of the session store's refresh lease spends the refresh token, see
+ * {@link org.sitenetsoft.quarkus.atproto.oauth.session.AtprotoSessionStore#tryAcquireRefreshLease}: a store shared by
+ * several nodes must implement it). A call fails with {@link AtprotoSessionExpired} when the account has no live
+ * session or its refresh token was refused ({@code invalid_grant}: revoked, expired): the job should ask the author to
+ * sign in again; and with {@link AtprotoTemporarilyUnavailable} when the session could not be refreshed now (directory,
+ * metadata or token endpoint outage, or another node's refresh still running; the session is kept): retry later. The
+ * returned handles can be kept: every call reads the session, and goes to its current PDS. Lookups read the session store, so call these methods from worker or background
  * threads, not the event loop (the in-memory default store never blocks).
  */
 @ApplicationScoped
@@ -72,21 +75,27 @@ public class AtprotoSessions {
                 .max(Comparator.comparing(AtprotoSession::created));
     }
 
-    /** The account's records, blocking, writes checked against the session's granted scope. */
+    /**
+     * The account's records, blocking, writes checked against the session's granted scope. The session is chosen now;
+     * each call goes to that session's current PDS (an account that moved PDS is followed after a refresh), so the
+     * view can be kept.
+     */
     public AtprotoRecords records(Did did) {
         AtprotoSession s = require(did);
-        return records.blockingForRepo(s.did(), s.pds(), auth(s), new ScopeWriteGuard(s.grantedScope()));
+        DpopXrpcAuth auth = auth(s);
+        return records.blockingForRepo(s.did(), auth::pds, auth, new ScopeWriteGuard(s.grantedScope()));
     }
 
     /** The account's records, reactive (the session is looked up now, the calls run when subscribed). */
     public ReactiveAtprotoRecords reactiveRecords(Did did) {
         AtprotoSession s = require(did);
-        return records.forRepo(s.did(), s.pds(), auth(s), new ScopeWriteGuard(s.grantedScope()));
+        DpopXrpcAuth auth = auth(s);
+        return records.forRepo(s.did(), auth::pds, auth, new ScopeWriteGuard(s.grantedScope()));
     }
 
     /**
      * An XRPC client whose calls without an explicit auth are authorized with the account's session (DPoP); the token
-     * is only sent to the account's PDS.
+     * is only sent to the account's current PDS (as the session knows it at each call).
      */
     public XrpcClient xrpc(Did did) {
         return SessionXrpc.client(xrpcClient, auth(require(did)));
@@ -118,6 +127,6 @@ public class AtprotoSessions {
     }
 
     private DpopXrpcAuth auth(AtprotoSession s) {
-        return new DpopXrpcAuth(s.id(), s.pds(), stores, refresher, nonces);
+        return new DpopXrpcAuth(s.id(), stores, refresher, nonces);
     }
 }

@@ -34,7 +34,8 @@ Uni<GetRecord.Output> out = repo.getRecord(URI.create("https://pds.example.com")
 
 AtprotoRecords mine = records.blockingForRepo(did, pdsUri, auth);   // forRepo(...) → ReactiveAtprotoRecords
 RecordResult r = mine.create(Nsid.parse(Document.NSID), document);  // server-generated TID
-mine.put(collection, RecordKey.parse("self"), record, Optional.of(previousCid));
+mine.put(Nsid.parse(Document.NSID), RecordKey.parse(Tid.next().value()), document, Optional.empty()); // key: tid
+mine.put(profiles, RecordKey.parse("self"), profile, Optional.of(previousCid));  // a "literal:self" collection
 Optional<Document> d = mine.get(collection, rkey, Document.class);  // empty on RecordNotFound
 mine.delete(collection, rkey);
 BlobRef cover = mine.uploadBlob(bytes, "image/png");
@@ -45,6 +46,9 @@ BlobRef cover = mine.uploadBlob(bytes, "image/png");
 * Before anything is sent, the `WriteGuard` bean checks the action (the OAuth extension's guard checks the granted
   scope) and the record is validated (`quarkus.atproto.lexicon.validation`). Problems fail with
   `RecordValidationException` (`collection()`, `problems()`).
+* A record key you choose (`create(collection, rkey, record)`, `put`) must match the Lexicon's record `key` type
+  (`tid`, `nsid`, `literal:<value>`, `any`): a slug key for `site.standard.document` (key `tid`) is refused (problem
+  path `rkey`) before anything is sent. Use `Tid.next()` for `tid` collections.
 * `RecordResult(AtUri uri, Cid cid, Optional<String> validationStatus)`.
 
 == Configuration

@@ -27,7 +27,8 @@ No `client-base-url` is set, so the extension uses the development client
 (http://127.0.0.1:8080/q/dev-ui/, extension "AT Protocol OAuth", page "OAuth client") shows it.
 
 . Open *http://127.0.0.1:8080/* (use `127.0.0.1`, not `localhost`: the authorization server sends you back to
-  `127.0.0.1`, and the sign-in's binding cookie must be on the same host).
+  `127.0.0.1`, and the sign-in's binding cookie must be on the same host; a sign-in posted on `localhost` answers 400
+  saying so).
 
 . Type your handle (`alice.bsky.social`) and press *Sign in with Bluesky*. You are sent to your authorization server
   (bsky.social): sign in there if needed and approve the requested access (publications and documents, image uploads).

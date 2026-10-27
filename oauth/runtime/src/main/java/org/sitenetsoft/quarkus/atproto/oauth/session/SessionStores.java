@@ -131,6 +131,19 @@ public class SessionStores {
                 return null;
             });
         }
+
+        @Override
+        public Uni<Boolean> tryAcquireRefreshLease(String sessionId, String refreshTokenHash, Duration ttl) {
+            return run(inline, () -> d.tryAcquireRefreshLease(sessionId, refreshTokenHash, ttl));
+        }
+
+        @Override
+        public Uni<Void> releaseRefreshLease(String sessionId, String refreshTokenHash) {
+            return run(inline, () -> {
+                d.releaseRefreshLease(sessionId, refreshTokenHash);
+                return null;
+            });
+        }
     }
 
     /** A reactive store seen blocking. */
@@ -158,6 +171,16 @@ public class SessionStores {
         @Override
         public void delete(String id) {
             d.delete(id).await().atMost(AWAIT);
+        }
+
+        @Override
+        public boolean tryAcquireRefreshLease(String sessionId, String refreshTokenHash, Duration ttl) {
+            return d.tryAcquireRefreshLease(sessionId, refreshTokenHash, ttl).await().atMost(AWAIT);
+        }
+
+        @Override
+        public void releaseRefreshLease(String sessionId, String refreshTokenHash) {
+            d.releaseRefreshLease(sessionId, refreshTokenHash).await().atMost(AWAIT);
         }
     }
 }

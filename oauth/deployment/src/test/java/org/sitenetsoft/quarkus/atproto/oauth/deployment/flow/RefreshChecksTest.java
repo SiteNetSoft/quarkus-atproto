@@ -12,13 +12,16 @@ import jakarta.inject.Inject;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
+import org.sitenetsoft.atproto.syntax.Handle;
 import org.sitenetsoft.quarkus.atproto.oauth.AtprotoSessionExpired;
+import org.sitenetsoft.quarkus.atproto.oauth.AtprotoSessions;
 import org.sitenetsoft.quarkus.atproto.oauth.AtprotoTemporarilyUnavailable;
 import org.sitenetsoft.quarkus.atproto.oauth.session.AtprotoSession;
 import org.sitenetsoft.quarkus.atproto.oauth.session.AtprotoSessionStore;
 import org.sitenetsoft.quarkus.atproto.oauth.session.Refresher;
 import org.sitenetsoft.quarkus.atproto.test.FakeAccount;
 import org.sitenetsoft.quarkus.atproto.test.FakeAtproto;
+import org.sitenetsoft.quarkus.atproto.xrpc.AtprotoRecords;
 
 import io.quarkus.test.QuarkusUnitTest;
 
@@ -48,6 +51,9 @@ public class RefreshChecksTest {
 
     @Inject
     Refresher refresher;
+
+    @Inject
+    AtprotoSessions atproto;
 
     @AfterEach
     void reset() {
@@ -89,6 +95,54 @@ public class RefreshChecksTest {
         assertThrows(AtprotoTemporarilyUnavailable.class, () -> refresh(s));
         assertEquals(0, FAKE.as().refreshCount());
         assertEquals(s.refreshToken(), sessions.find(s.id()).orElseThrow().refreshToken());
+    }
+
+    @Test
+    void tokenEndpointOutageKeepsTheSession() {
+        AtprotoSession s = loggedIn();
+        FAKE.as().tokenEndpointStatus(503);
+        assertThrows(AtprotoTemporarilyUnavailable.class, () -> refresh(s));
+        assertEquals(0, FAKE.as().refreshCount());
+        AtprotoSession kept = sessions.find(s.id()).orElseThrow();
+        assertEquals(s.refreshToken(), kept.refreshToken());
+        // the authorization server is back: the same session refreshes
+        FAKE.as().tokenEndpointStatus(200);
+        refresh(s);
+        assertEquals(1, FAKE.as().refreshCount());
+    }
+
+    @Test
+    void transientHandleCheckFailureKeepsTheHandle() {
+        AtprotoSession s = loggedIn();
+        assertEquals(HANDLE, s.handle().value());
+        // the handle's reverse check cannot be done right now (DNS empty, well-known 503)
+        FAKE.pds().wellKnownStatus(503);
+        AtprotoSession refreshed = refresh(s);
+        assertEquals(HANDLE, refreshed.handle().value());
+        assertEquals(HANDLE, sessions.find(s.id()).orElseThrow().handle().value());
+        // a handle that definitively no longer resolves back is replaced by handle.invalid
+        FAKE.pds().wellKnownStatus(404);
+        AtprotoSession again = refresh(refreshed);
+        assertEquals(Handle.INVALID, again.handle());
+    }
+
+    @Test
+    void heldRecordsFollowAPdsMove() {
+        loggedIn();
+        // a long-lived job keeps its records view
+        AtprotoRecords held = atproto.records(ALICE.did());
+        held.create(TestApp.DOCUMENT, java.util.Map.of("site", "https://example.com", "title", "before",
+                "publishedAt", "2026-10-27T10:00:00.000Z"));
+        assertEquals(1, FAKE.pds().records().size());
+        OTHER.account(HANDLE);
+        OTHER.pds().authorizationServers(List.of(FAKE.asUrl().toString()));
+        OTHER.pds().trustAuthorizationServer(FAKE.as());
+        FAKE.plc().movePds(ALICE.did(), OTHER.pdsUrl());
+        refresh(sessions.findByDid(ALICE.did()).get(0));
+        held.create(TestApp.DOCUMENT, java.util.Map.of("site", "https://example.com", "title", "after",
+                "publishedAt", "2026-10-27T10:00:00.000Z"));
+        assertEquals(1, OTHER.pds().records().size(), "the held view writes to the new PDS");
+        assertEquals(1, FAKE.pds().records().size());
     }
 
     @Test

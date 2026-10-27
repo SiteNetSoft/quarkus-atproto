@@ -84,4 +84,36 @@ class GeneratorGoldenTest {
     assertFalse(index.containsKey("site.standard.authFull#main"));
     assertFalse(index.keySet().stream().anyMatch(k -> k.startsWith("com.atproto.")));
   }
+
+  @Test void nullableOptionalIsPlainNullableType() throws IOException {
+    LexiconSet core = Fixtures.only("com.atproto.");
+    Generator.generate(core, Fixtures.nsids(core, "com.atproto."), Map.of(), out, Optional.empty());
+    String put = Files.readString(out.resolve("com/atproto/repo/PutRecord.java"));
+    assertTrue(put.contains("@JsonProperty(\"swapRecord\") Cid swapRecord"), put);
+    assertFalse(put.contains("Optional<"), put);
+    String label = Files.readString(out.resolve("com/atproto/label/Defs.java"));
+    assertTrue(label.contains("@JsonProperty(\"sig\") Bytes sig"), label);
+  }
+
+  @Test void mainRecordPropertyNamedNsidFails() {
+    LexiconDoc doc = LexiconParser.parse("""
+        {"lexicon":1,"id":"com.example.thing","defs":{"main":{"type":"record","key":"tid",
+          "record":{"type":"object","properties":{"NSID":{"type":"string"}}}}}}
+        """);
+    LexiconException e = assertThrows(LexiconException.class, () -> Generator.generate(LexiconSet.of(List.of(doc)),
+        Set.of(doc.id()), Map.of(), out, Optional.empty()));
+    assertTrue(e.getMessage().contains("com.example.thing#main.NSID") && e.getMessage().contains("constant"),
+        e.getMessage());
+  }
+
+  @Test void paramNamedToMapFails() {
+    LexiconDoc doc = LexiconParser.parse("""
+        {"lexicon":1,"id":"com.example.find","defs":{"main":{"type":"query",
+          "parameters":{"type":"params","properties":{"toMap":{"type":"string"}}}}}}
+        """);
+    LexiconException e = assertThrows(LexiconException.class, () -> Generator.generate(LexiconSet.of(List.of(doc)),
+        Set.of(doc.id()), Map.of(), out, Optional.empty()));
+    assertTrue(e.getMessage().contains("com.example.find#main.parameters") && e.getMessage().contains("toMap"),
+        e.getMessage());
+  }
 }

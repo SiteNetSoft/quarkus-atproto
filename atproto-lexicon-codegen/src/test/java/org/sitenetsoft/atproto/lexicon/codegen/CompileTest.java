@@ -114,4 +114,49 @@ class CompileTest {
     ClassLoader cl = InMemoryCompiler.compile(sources);
     assertNotNull(cl.loadClass("org.example.gen.com.atproto.repo.RepoClient"));
   }
+
+  @Test void bytesAndNullableOptionalRoundTrip() throws Exception {
+    ClassLoader cl = InMemoryCompiler.compile(generateCore());
+    ObjectMapper mapper = new ObjectMapper().registerModule(new AtprotoSyntaxModule());
+
+    // bytes: {"$bytes": base64 without padding}, value equality
+    Class<?> label = cl.loadClass("com.atproto.label.Defs$Label");
+    String json = "{\"src\":\"did:plc:abc\",\"uri\":\"at://did:plc:abc\",\"val\":\"nudity\","
+        + "\"cts\":\"2026-10-26T12:00:00.000Z\",\"sig\":{\"$bytes\":\"AQI\"}}";
+    Object l = mapper.readValue(json, label);
+    Object sig = label.getMethod("sig").invoke(l);
+    assertEquals(org.sitenetsoft.quarkus.atproto.lexicon.Bytes.class, sig.getClass());
+    assertArrayEquals(new byte[] {1, 2}, ((org.sitenetsoft.quarkus.atproto.lexicon.Bytes) sig).toByteArray());
+    assertEquals(json, mapper.writeValueAsString(l));
+    assertEquals(l, mapper.readValue(json, label));
+
+    // optional + nullable: plain nullable type; absent stays absent, a value is written
+    Class<?> put = cl.loadClass("com.atproto.repo.PutRecord$Input");
+    String absent = "{\"repo\":\"did:plc:abc\",\"collection\":\"site.standard.document\",\"rkey\":\"self\","
+        + "\"record\":{\"$type\":\"site.standard.document\"}}";
+    Object a = mapper.readValue(absent, put);
+    assertNull(put.getMethod("swapRecord").invoke(a));
+    assertEquals(absent, mapper.writeValueAsString(a));
+    String cid = "bafyreie5737gdxlw5i64vzichcalba3z2v5n6icifvx5xytvske7mr3hpm";
+    String withValue = absent.replace("}}", "},\"swapRecord\":\"" + cid + "\"}");
+    Object v = mapper.readValue(withValue, put);
+    assertEquals(cid, put.getMethod("swapRecord").invoke(v).toString());
+    assertEquals(withValue, mapper.writeValueAsString(v));
+  }
+
+  @Test void closedUnionRejectsUnknownType() throws Exception {
+    org.sitenetsoft.atproto.lexicon.codegen.model.LexiconDoc doc = LexiconParser.parse("""
+        {"lexicon":1,"id":"com.example.shape","defs":{
+          "main":{"type":"object","properties":{"kind":{"type":"union","closed":true,"refs":["#square"]}}},
+          "square":{"type":"object","properties":{"side":{"type":"integer"}}}}}
+        """);
+    ClassLoader cl = InMemoryCompiler.compile(Generator.generate(LexiconSet.of(List.of(doc)), java.util.Set.of(doc.id()),
+        Map.of(), core, Optional.empty()));
+    Class<?> shape = cl.loadClass("com.example.Shape");
+    ObjectMapper mapper = new ObjectMapper();
+    Object ok = mapper.readValue("{\"kind\":{\"$type\":\"com.example.shape#square\",\"side\":2}}", shape);
+    assertEquals(cl.loadClass("com.example.Shape$Kind$Square"), shape.getMethod("kind").invoke(ok).getClass());
+    assertThrows(com.fasterxml.jackson.databind.exc.InvalidTypeIdException.class,
+        () -> mapper.readValue("{\"kind\":{\"$type\":\"com.example.shape#circle\",\"r\":1}}", shape));
+  }
 }

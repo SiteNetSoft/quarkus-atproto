@@ -50,6 +50,11 @@ import org.sitenetsoft.atproto.syntax.Nsid;
  * def becomes a Java {@code record}; query/procedure/def-only documents become a {@code final class} holder. Other
  * defs nest inside it. Query and procedure documents of one namespace share a generated XRPC client class.
  *
+ * <p>Optional properties are plain nullable types, including {@code nullable} ones: absent and explicit JSON
+ * {@code null} both read as Java {@code null}, and Java {@code null} is omitted on write. A typed record therefore
+ * cannot send an explicit {@code null} (e.g. {@code com.atproto.repo.putRecord}'s {@code swapRecord} "must not
+ * exist"); callers needing that use the generic XRPC client with a {@code JsonNode} body.
+ *
  * <p>References to NSIDs outside {@code toGenerate} resolve to the classes already generated for them, read from a
  * dependency {@link GeneratedIndex}; a reference neither generated here nor indexed fails with a message naming it.
  */
@@ -78,7 +83,10 @@ public final class Generator {
   private static final ClassName NSID_CLASS = ClassName.get(Nsid.class);
   private static final ClassName STRING = ClassName.get(String.class);
   private static final ClassName JSON_NODE = ClassName.get(JsonNode.class);
-  private static final TypeName BYTES = ArrayTypeName.of(TypeName.BYTE);
+  /** Lexicon {@code bytes}: a runtime value type owning its {@code {"$bytes": base64}} wire form. */
+  static final ClassName LEX_BYTES = ClassName.get("org.sitenetsoft.quarkus.atproto.lexicon", "Bytes");
+  /** Raw XRPC bodies (blob upload input, non-JSON output). */
+  private static final TypeName RAW_BYTES = ArrayTypeName.of(TypeName.BYTE);
 
   private final LexiconSet set;
   private final Set<String> toGenerate;
@@ -139,6 +147,7 @@ public final class Generator {
           case LexBoolean b -> ClassName.get(Boolean.class);
           case LexBlob b -> BLOB_REF;
           case LexCidLink c -> CID_LINK;
+          case LexBytes b -> LEX_BYTES;
           case LexUnknown u -> JSON_NODE;
           default -> null;
         };
@@ -206,7 +215,7 @@ public final class Generator {
           return ClassName.get(Boolean.class);
         }
         case LexBytes b -> {
-          return BYTES;
+          return LEX_BYTES;
         }
         case LexCidLink c -> {
           return CID_LINK;
@@ -261,7 +270,7 @@ public final class Generator {
       case LexString s -> stringType(s);
       case LexInteger i -> ClassName.get(Long.class);
       case LexBoolean b -> ClassName.get(Boolean.class);
-      case LexBytes b -> BYTES;
+      case LexBytes b -> LEX_BYTES;
       case LexCidLink c -> CID_LINK;
       case LexBlob b -> BLOB_REF;
       case LexUnknown u -> JSON_NODE;
@@ -387,24 +396,25 @@ public final class Generator {
       if (!names.add(member)) {
         throw new LexiconException(where + ": properties collide on Java name \"" + member + "\"");
       }
+      if (!scope.constants.add(member)) {
+        throw new LexiconException(where + "." + prop + ": property name \"" + prop + "\" collides with the constant "
+            + scope.name + "." + member);
+      }
       TypeName t = boxed(fieldType(e.getValue(), ctx, scope, prop, where + "." + prop));
       boolean req = required.contains(prop);
       boolean nul = nullable.contains(prop);
-      ParameterSpec.Builder p;
-      if (!req && nul) {
-        // absent → Java null (omitted); Optional.empty() → explicit JSON null
-        p = ParameterSpec.builder(ParameterizedTypeName.get(ClassName.get(Optional.class), t), member);
-      } else {
-        p = ParameterSpec.builder(t, member);
-      }
+      // Optional + nullable is a plain nullable T like any optional property: absent and JSON null both read as
+      // Java null, and Java null is omitted on write, so an explicit JSON null cannot be sent through these types.
+      ParameterSpec.Builder p = ParameterSpec.builder(t, member);
       p.addAnnotation(AnnotationSpec.builder(JsonProperty.class).addMember("value", "$S", prop).build());
       if (req && nul) {
         p.addAnnotation(AnnotationSpec.builder(JsonInclude.class)
             .addMember("value", "$T.ALWAYS", JsonInclude.Include.class).build());
       }
       String doc = e.getValue().description();
-      if (doc != null || req) {
-        String text = (req ? (nul ? "Required, may be null." : "Required.") : "")
+      if (doc != null || req || nul) {
+        String text = (req ? (nul ? "Required, may be null." : "Required.")
+            : (nul ? "Nullable; null is omitted, an explicit JSON null cannot be sent through this type." : ""))
             + (doc == null ? "" : " " + javadocText(doc));
         if (scope.hasDoc && !scope.hasParamDoc) {
           scope.builder.addJavadoc("\n");
@@ -659,6 +669,10 @@ public final class Generator {
                          List<LexError> errors) {
     Nsid id = doc.id();
     if (params != null) {
+      if (params.properties().keySet().stream().map(JavaNames::memberName).anyMatch("toMap"::equals)) {
+        throw new LexiconException(id + "#main.parameters: a parameter named \"toMap\" collides with the generated "
+            + "Params.toMap() method");
+      }
       ClassName cn = scope.name.nestedClass("Params");
       String where = id + "#main.parameters";
       TypeSpec.Builder pb = TypeSpec.recordBuilder(cn).addModifiers(Modifier.PUBLIC, Modifier.STATIC);
@@ -716,7 +730,7 @@ public final class Generator {
       return ClassName.get(Void.class);
     }
     if (body.schema() == null) {
-      return body.encoding().equals("application/json") ? JSON_NODE : BYTES;
+      return body.encoding().equals("application/json") ? JSON_NODE : RAW_BYTES;
     }
     return switch (body.schema()) {
       case LexRef r -> refType(r.ref(), id, id + "#main");
@@ -776,7 +790,7 @@ public final class Generator {
           m.addParameter(optAuth, "auth")
               .addStatement("return xrpc.procedure(service, $N, null, $L, auth)", constant, classLiteral(out));
         } else if (p.input().schema() == null && !p.input().encoding().equals("application/json")) {
-          m.addParameter(BYTES, "body").addParameter(STRING, "contentType").addParameter(optAuth, "auth")
+          m.addParameter(RAW_BYTES, "body").addParameter(STRING, "contentType").addParameter(optAuth, "auth")
               .addJavadoc("@param contentType the body's MIME type (Lexicon encoding <code>$L</code>)\n",
                   javadocText(p.input().encoding()))
               .addStatement("return xrpc.procedureBytes(service, $N, body, contentType, $L, auth)", constant,

@@ -20,8 +20,8 @@ import org.sitenetsoft.atproto.syntax.Nsid;
  * The index a Lexicon pack ships at {@value #RESOURCE}: a JSON object mapping {@code nsid#def} (main defs as
  * {@code nsid#main}) to the binary name of the Java type generated for it ({@code com.atproto.label.Defs$SelfLabels}).
  * Only defs of generated documents are listed: records, objects and unions map to their class; named
- * string/integer/boolean/blob/cid-link/unknown defs map to the Java type a ref to them takes. Subscriptions,
- * permission sets, tokens, bytes and array defs are not listed.
+ * string/integer/boolean/bytes/blob/cid-link/unknown defs map to the Java type a ref to them takes. Subscriptions,
+ * permission sets, tokens and array defs are not listed.
  */
 public final class GeneratedIndex {
   public static final String RESOURCE = "META-INF/atproto/lexicons/index.json";

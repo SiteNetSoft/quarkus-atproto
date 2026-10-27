@@ -172,7 +172,8 @@ public final class LexiconParser {
 
   private static LexObject object(JsonNode n, String path) {
     Map<String, LexDef> props = properties(n, path, Where.FIELD);
-    return new LexObject(text(n, "description"), strings(n, "required", path), strings(n, "nullable", path), props);
+    return new LexObject(text(n, "description"), declared(n, "required", path, props),
+        declared(n, "nullable", path, props), props);
   }
 
   private static LexParams params(JsonNode n, String path) {
@@ -182,7 +183,19 @@ public final class LexiconParser {
     if (!"params".equals(text(n, "type"))) {
       throw new LexiconException(path + ": \"parameters\" must have type \"params\"");
     }
-    return new LexParams(text(n, "description"), strings(n, "required", path), properties(n, path, Where.PARAM));
+    Map<String, LexDef> props = properties(n, path, Where.PARAM);
+    return new LexParams(text(n, "description"), declared(n, "required", path, props), props);
+  }
+
+  /** {@code required}/{@code nullable}: every name must be a declared property. */
+  private static List<String> declared(JsonNode n, String field, String path, Map<String, LexDef> props) {
+    List<String> names = strings(n, field, path);
+    for (String name : names) {
+      if (!props.containsKey(name)) {
+        throw new LexiconException(path + ": \"" + field + "\" names \"" + name + "\", which is not in \"properties\"");
+      }
+    }
+    return names;
   }
 
   private static Map<String, LexDef> properties(JsonNode n, String path, Where where) {

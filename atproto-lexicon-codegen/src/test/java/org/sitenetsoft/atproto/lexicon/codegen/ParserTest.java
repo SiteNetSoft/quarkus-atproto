@@ -121,4 +121,20 @@ class ParserTest {
         {"lexicon":1,"id":"com.example.thing","defs":{"main":{"type":"float"}}}"""));
     assertTrue(e.getMessage().contains("float"), e.getMessage());
   }
+
+  @Test void rejectsRequiredOrNullableNamesNotInProperties() {
+    LexiconException e = assertThrows(LexiconException.class, () -> LexiconParser.parse("""
+        {"lexicon":1,"id":"com.example.thing","defs":{"main":{"type":"object",
+          "required":["title","colour"],"properties":{"title":{"type":"string"}}}}}"""));
+    assertTrue(e.getMessage().contains("com.example.thing#main") && e.getMessage().contains("\"colour\""),
+        e.getMessage());
+    e = assertThrows(LexiconException.class, () -> LexiconParser.parse("""
+        {"lexicon":1,"id":"com.example.thing","defs":{"main":{"type":"object",
+          "nullable":["ghost"],"properties":{"title":{"type":"string"}}}}}"""));
+    assertTrue(e.getMessage().contains("nullable") && e.getMessage().contains("\"ghost\""), e.getMessage());
+    e = assertThrows(LexiconException.class, () -> LexiconParser.parse("""
+        {"lexicon":1,"id":"com.example.thing","defs":{"main":{"type":"query",
+          "parameters":{"type":"params","required":["q"],"properties":{"limit":{"type":"integer"}}}}}}"""));
+    assertTrue(e.getMessage().contains("parameters") && e.getMessage().contains("\"q\""), e.getMessage());
+  }
 }

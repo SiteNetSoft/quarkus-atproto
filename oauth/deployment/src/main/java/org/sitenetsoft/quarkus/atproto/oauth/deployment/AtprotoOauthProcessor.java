@@ -46,6 +46,7 @@ import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
 import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.RuntimeInitializedClassBuildItem;
 import io.quarkus.vertx.http.deployment.HttpRootPathBuildItem;
 import io.quarkus.vertx.http.deployment.RouteBuildItem;
 
@@ -126,5 +127,16 @@ class AtprotoOauthProcessor {
                 .handler(recorder.handler(LogoutHandler.class.getName())).build());
         routes.produce(RouteBuildItem.builder().routeFunction(recorder.route(Endpoint.UNLINK))
                 .handler(recorder.handler(UnlinkHandler.class.getName())).build());
+    }
+
+    /**
+     * These classes hold a static SecureRandom. Initialised at build time, native-image would bake the generator
+     * (and its seed) into the image, which it refuses to do; initialise them when the application starts.
+     */
+    @BuildStep
+    void runtimeInitializedRandoms(BuildProducer<RuntimeInitializedClassBuildItem> classes) {
+        classes.produce(new RuntimeInitializedClassBuildItem("org.sitenetsoft.quarkus.atproto.oauth.jose.DpopProofs"));
+        classes.produce(new RuntimeInitializedClassBuildItem(LoginHandler.class.getName()));
+        classes.produce(new RuntimeInitializedClassBuildItem(SessionCookie.class.getName()));
     }
 }

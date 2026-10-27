@@ -32,6 +32,7 @@ import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedResourceBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.RuntimeInitializedClassBuildItem;
 import io.quarkus.deployment.pkg.builditem.CurateOutcomeBuildItem;
 import io.quarkus.paths.PathTree;
 
@@ -222,5 +223,14 @@ class AtprotoLexiconProcessor {
             resources.put(id, resource);
             return true;
         }
+    }
+
+    /**
+     * {@code TidClock} picks a random clock id when the class initialises; at build time every running copy of a
+     * native image would share the same id, so initialise it at startup.
+     */
+    @BuildStep
+    RuntimeInitializedClassBuildItem runtimeInitializedTidClock() {
+        return new RuntimeInitializedClassBuildItem("org.sitenetsoft.atproto.syntax.TidClock");
     }
 }

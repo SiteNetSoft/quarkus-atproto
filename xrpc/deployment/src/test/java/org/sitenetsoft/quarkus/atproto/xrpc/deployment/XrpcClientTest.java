@@ -165,22 +165,60 @@ class XrpcClientTest {
     @Test
     void successIsNeverResent() {
         URI pds = PdsStub.service("ok");
-        AtomicInteger asked = new AtomicInteger();
-        XrpcAuth auth = new XrpcAuth() {
-            @Override
-            public Uni<XrpcRequest> authorize(XrpcRequest request) {
-                return Uni.createFrom().item(request.withHeader("Authorization", "Bearer t"));
-            }
-
-            @Override
-            public boolean shouldRetry(XrpcResponse response) {
-                asked.incrementAndGet(); // sees the response (to store a DPoP nonce), but a write is not repeated
-                return true;
-            }
-        };
+        CountingAuth auth = new CountingAuth();
         xrpc.procedure(pds, ECHO, Map.of(), JsonNode.class, Optional.of(auth));
-        assertEquals(1, asked.get());
+        assertEquals(List.of(200), auth.observed); // seen (to store a DPoP nonce), but a write is not repeated
+        assertEquals(0, auth.asked.get()); // shouldRetry is only asked about 4xx answers
         assertEquals(1, PdsStub.requests(pds).size());
+    }
+
+    @Test
+    void observeSeesBothResponses() {
+        // the retried response is observed too, so a nonce rotated in it is not lost
+        URI pds = PdsStub.service("auth");
+        RefreshingAuth auth = new RefreshingAuth();
+        xrpc.query(pds, ECHO, Map.of(), JsonNode.class, Optional.of(auth));
+        assertEquals(List.of(401, 200), auth.observed);
+
+        URI denied = PdsStub.service("unauthorized");
+        RefreshingAuth always = new RefreshingAuth();
+        assertThrows(XrpcException.class,
+                () -> xrpc.procedure(denied, ECHO, Map.of(), JsonNode.class, Optional.of(always)));
+        assertEquals(List.of(401, 401), always.observed);
+    }
+
+    @Test
+    void noResendOn5xx() {
+        URI pds = PdsStub.service("unavailable");
+        CountingAuth auth = new CountingAuth();
+        XrpcException e = assertThrows(XrpcException.class,
+                () -> xrpc.procedure(pds, ECHO, Map.of(), JsonNode.class, Optional.of(auth)));
+        assertEquals(503, e.status());
+        assertEquals(1, PdsStub.requests(pds).size());
+        assertEquals(List.of(503), auth.observed);
+        assertEquals(0, auth.asked.get());
+    }
+
+    /** Would always retry; records what it observes. */
+    static final class CountingAuth implements XrpcAuth {
+        final List<Integer> observed = java.util.Collections.synchronizedList(new ArrayList<>());
+        final AtomicInteger asked = new AtomicInteger();
+
+        @Override
+        public Uni<XrpcRequest> authorize(XrpcRequest request) {
+            return Uni.createFrom().item(request.withHeader("Authorization", "Bearer t"));
+        }
+
+        @Override
+        public void observe(XrpcResponse response) {
+            observed.add(response.status());
+        }
+
+        @Override
+        public boolean shouldRetry(XrpcResponse response) {
+            asked.incrementAndGet();
+            return true;
+        }
     }
 
     @Test
@@ -201,7 +239,13 @@ class XrpcClientTest {
     /** {@code Bearer stale} until {@link #shouldRetry} sees a 401, {@code Bearer fresh} after. */
     static final class RefreshingAuth implements XrpcAuth {
         final List<Integer> seen = new ArrayList<>();
+        final List<Integer> observed = new ArrayList<>();
         volatile boolean fresh;
+
+        @Override
+        public void observe(XrpcResponse response) {
+            observed.add(response.status());
+        }
 
         @Override
         public Uni<XrpcRequest> authorize(XrpcRequest request) {

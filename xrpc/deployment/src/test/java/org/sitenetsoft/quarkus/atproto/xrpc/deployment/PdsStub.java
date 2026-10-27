@@ -112,6 +112,7 @@ public final class PdsStub {
                         .putHeader("ratelimit-reset", "1700000000").putHeader("ratelimit-policy", "3000;w=300");
                 json(req, 429, "{\"error\":\"RateLimitExceeded\",\"message\":\"Rate Limit Exceeded\"}");
             }
+            case "unavailable" -> json(req, 503, "{\"error\":\"Unavailable\",\"message\":\"down\"}");
             case "unauthorized" -> json(req, 401, "{\"error\":\"InvalidToken\",\"message\":\"Bad token\"}");
             case "auth" -> {
                 if ("Bearer fresh".equals(req.getHeader("Authorization"))) {

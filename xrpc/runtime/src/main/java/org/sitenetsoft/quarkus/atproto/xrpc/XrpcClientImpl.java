@@ -38,8 +38,9 @@ import io.smallrye.mutiny.Uni;
 /**
  * The XRPC client over {@code quarkus-safe-fetch}: {@code <service>/xrpc/<nsid>}, JSON in and out (a {@code byte[]}
  * output class takes the raw body, {@code Void} discards it). With an {@link XrpcAuth} the request is authorized, sent,
- * and the response shown to {@link XrpcAuth#shouldRetry}; when that answers {@code true} for an error response the
- * request is authorized again and sent once more. A successful response is never resent (a write would happen twice).
+ * and every response (first and retried) shown to {@link XrpcAuth#observe}; when the first response is a 4xx and
+ * {@link XrpcAuth#shouldRetry} answers {@code true} the request is authorized again and sent once more. A 2xx is never
+ * resent (a write would happen twice), nor a 5xx (the server failed; repeating a write is not this layer's call).
  * A response that comes from another host than the one asked (a followed {@code GET} redirect) is refused.
  */
 @ApplicationScoped
@@ -113,7 +114,7 @@ public class XrpcClientImpl implements ReactiveXrpcClient {
     }
     XrpcAuth a = auth.get();
     return authorizeAndSend(request, a).chain(response -> {
-      if (a.shouldRetry(response) && !success(response.status())) {
+      if (clientError(response.status()) && a.shouldRetry(response)) {
         LOG.debugf("XRPC %s %s answered %d; authorizing again and retrying once", request.method(),
             path(request.url()), response.status());
         return authorizeAndSend(request, a);
@@ -127,7 +128,7 @@ public class XrpcClientImpl implements ReactiveXrpcClient {
       if (authorized == null) {
         return Uni.createFrom().failure(new IllegalStateException("XrpcAuth.authorize returned null"));
       }
-      return send(authorized);
+      return send(authorized).invoke(auth::observe);
     });
   }
 
@@ -253,6 +254,10 @@ public class XrpcClientImpl implements ReactiveXrpcClient {
 
   private static String encode(String s) {
     return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
+  }
+
+  private static boolean clientError(int status) {
+    return status >= 400 && status < 500;
   }
 
   private static boolean success(int status) {

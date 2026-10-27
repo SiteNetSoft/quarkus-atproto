@@ -19,7 +19,10 @@ public class OAuthRecorder {
     /** Which configured path a route serves. */
     public enum Endpoint {
         METADATA,
-        JWKS
+        JWKS,
+        LOGIN,
+        CALLBACK,
+        LOGOUT
     }
 
     /** A route handler that looks up {@code beanClassName} lazily. */
@@ -27,7 +30,10 @@ public class OAuthRecorder {
         return new BeanHandler(beanClassName);
     }
 
-    /** A {@code GET} route at the path configured at runtime for {@code endpoint}. */
+    /**
+     * A route at the path configured at runtime for {@code endpoint}: {@code GET} (metadata, JWKS, callback),
+     * {@code GET} and {@code POST} (login), {@code POST} (logout).
+     */
     public Function<Router, Route> route(Endpoint endpoint) {
         return router -> {
             OAuthConfig config = ConfigProvider.getConfig().unwrap(SmallRyeConfig.class)
@@ -35,8 +41,19 @@ public class OAuthRecorder {
             String path = switch (endpoint) {
                 case METADATA -> config.metadataPath();
                 case JWKS -> config.jwksPath();
+                case LOGIN -> config.loginPath();
+                case CALLBACK -> config.callbackPath();
+                case LOGOUT -> config.logoutPath();
             };
-            return router.route(HttpMethod.GET, path.startsWith("/") ? path : "/" + path);
+            String p = path.startsWith("/") ? path : "/" + path;
+            return switch (endpoint) {
+                // the login form's body (small; no uploads), read before the login handler runs
+                case LOGIN -> router.route(p).method(HttpMethod.GET).method(HttpMethod.POST)
+                        .handler(io.vertx.ext.web.handler.BodyHandler.create().setBodyLimit(8 * 1024)
+                                .setHandleFileUploads(false));
+                case LOGOUT -> router.route(HttpMethod.POST, p);
+                default -> router.route(HttpMethod.GET, p);
+            };
         };
     }
 }

@@ -159,6 +159,7 @@ public final class FakeAuthorizationServer {
   private final List<String> rejectedScopePrefixes = new CopyOnWriteArrayList<>();
   private volatile FakeAccount signInAs;
   private final Map<String, Optional<Object>> metadataOverrides = new ConcurrentHashMap<>();
+  private volatile String[] clientFetchRewrite;
 
   FakeAuthorizationServer(FakeAtproto fake) {
     this.fake = fake;
@@ -673,7 +674,12 @@ public final class FakeAuthorizationServer {
     }
   }
 
-  private JsonNode fetchJson(URI uri, String what) {
+  private JsonNode fetchJson(URI requested, String what) {
+    URI uri = requested;
+    String[] rewrite = clientFetchRewrite;
+    if (rewrite != null && requested.toString().startsWith(rewrite[0])) {
+      uri = URI.create(rewrite[1] + requested.toString().substring(rewrite[0].length()));
+    }
     try {
       HttpResponse<byte[]> r = http.send(HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(5))
           .header("Accept", "application/json").GET().build(), HttpResponse.BodyHandlers.ofByteArray());
@@ -702,6 +708,16 @@ public final class FakeAuthorizationServer {
    */
   public void overrideMetadata(String member, Object value) {
     metadataOverrides.put(member, Optional.ofNullable(value));
+  }
+
+  /**
+   * Client metadata and JWKS fetches for URLs starting with {@code fromPrefix} go to {@code toPrefix} + the rest
+   * instead (until {@link FakeAtproto#clear()}): lets a confidential client whose {@code client_id} is
+   * {@code https://app.example.test/...} be served by the app under test on {@code http://127.0.0.1:<port>}. The
+   * {@code client_id} itself is unchanged.
+   */
+  public void rewriteClientFetches(String fromPrefix, String toPrefix) {
+    clientFetchRewrite = new String[] {fromPrefix, toPrefix};
   }
 
   /** Callbacks carry a wrong {@code iss} (until {@link FakeAtproto#clear()}). */
@@ -787,6 +803,7 @@ public final class FakeAuthorizationServer {
     rejectedScopePrefixes.clear();
     signInAs = null;
     metadataOverrides.clear();
+    clientFetchRewrite = null;
     dpop.reset();
     parCount.set(0);
     tokenCount.set(0);

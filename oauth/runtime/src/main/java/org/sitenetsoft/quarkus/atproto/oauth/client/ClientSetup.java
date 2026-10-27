@@ -77,8 +77,20 @@ public class ClientSetup {
     }
 
     private ClientIdentity resolve(ClientKeys k, java.util.function.IntSupplier port) {
-        return ClientIdentity.resolve(config.clientBaseUrl(), config.scope(), config.metadataPath(),
+        return ClientIdentity.resolve(config.clientBaseUrl(), registeredScope(config.scope(), config.fallbackScope()),
+                config.metadataPath(),
                 config.callbackPath(), config.jwksPath(), LaunchMode.current(), port, k.signing());
+    }
+
+    /**
+     * The scope the client registers (its metadata {@code scope}, or the development {@code client_id}'s): the
+     * configured scope plus the fallback scope's other values, since a client may only request what it registered.
+     */
+    static String registeredScope(String scope, java.util.Optional<String> fallback) {
+        java.util.Set<String> all = new java.util.LinkedHashSet<>(java.util.List.of(scope.trim().split("\\s+")));
+        fallback.map(String::trim).filter(f -> !f.isEmpty())
+                .ifPresent(f -> all.addAll(java.util.List.of(f.split("\\s+"))));
+        return String.join(" ", all);
     }
 
     /** The port the HTTP server listens on (Quarkus writes the actual port back when a random one was asked for). */

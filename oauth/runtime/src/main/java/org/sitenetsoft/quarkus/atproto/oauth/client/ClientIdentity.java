@@ -107,7 +107,7 @@ public final class ClientIdentity {
         return redirectUri;
     }
 
-    /** The scope requested, space separated. */
+    /** The scope registered (the configured scope plus the fallback scope), space separated. */
     public String scope() {
         return scope;
     }

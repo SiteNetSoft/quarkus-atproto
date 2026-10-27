@@ -50,6 +50,17 @@ public class PdsExtractionTest {
     }
 
     @Test
+    void didWebWithPathOrPortRefused() {
+        // AT Protocol supports hostname-level did:web only: a path or a port (except on localhost) is not an account
+        IdentityResolutionFailed path = assertThrows(IdentityResolutionFailed.class,
+                () -> resolver.resolveDid(Did.parse("did:web:shared-host.example.test:u:alice")));
+        org.junit.jupiter.api.Assertions.assertTrue(path.getMessage().contains("path"), path.getMessage());
+        IdentityResolutionFailed port = assertThrows(IdentityResolutionFailed.class,
+                () -> resolver.resolveDid(Did.parse("did:web:host.example.test%3A8443")));
+        org.junit.jupiter.api.Assertions.assertTrue(port.getMessage().contains("port"), port.getMessage());
+    }
+
+    @Test
     void nonAtprotoMethodFails() {
         assertThrows(IdentityResolutionFailed.class,
                 () -> resolver.resolveDid(Did.parse("did:key:zQ3shXjHeiBuRCKmM36cuYnm7YEMzhGnCmCyW92sRJ9pribSF")));

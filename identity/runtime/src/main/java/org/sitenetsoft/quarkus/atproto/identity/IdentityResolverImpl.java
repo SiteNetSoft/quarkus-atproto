@@ -18,6 +18,7 @@ import org.jboss.logging.Logger;
 import org.sitenetsoft.atproto.syntax.AtIdentifier;
 import org.sitenetsoft.atproto.syntax.Did;
 import org.sitenetsoft.atproto.syntax.Handle;
+import org.sitenetsoft.quarkus.did.DidConfig;
 import org.sitenetsoft.quarkus.did.DidDocument;
 import org.sitenetsoft.quarkus.did.DidException;
 import org.sitenetsoft.quarkus.did.ReactiveDidResolver;
@@ -32,6 +33,7 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 
 import io.quarkus.runtime.LaunchMode;
+import io.quarkus.runtime.Startup;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.subscription.Cancellable;
 import io.smallrye.mutiny.subscription.UniEmitter;
@@ -42,6 +44,7 @@ import io.smallrye.mutiny.subscription.UniEmitter;
  * cached for {@code quarkus.atproto.identity.cache-ttl}. {@link BlockingIdentityResolver} wraps it.
  */
 @ApplicationScoped
+@Startup
 public class IdentityResolverImpl implements ReactiveIdentityResolver {
 
     private static final Logger LOG = Logger.getLogger("org.sitenetsoft.quarkus.atproto.identity");
@@ -64,7 +67,8 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
 
     @Inject
     public IdentityResolverImpl(TxtResolver dns, ReactiveDidResolver dids, ReactiveSafeFetchClient fetch,
-            IdentityConfig config, SafeFetchConfig safeFetch) {
+            IdentityConfig config, SafeFetchConfig safeFetch, DidConfig didConfig) {
+        cacheTtlWarning(didConfig.cacheTtl(), config.cacheTtl()).ifPresent(LOG::warn);
         this.dns = dns;
         this.dids = dids;
         this.fetch = fetch;
@@ -76,6 +80,24 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
                 .expireAfterWrite(config.cacheTtl()).build() : null;
         this.identities = caching ? Caffeine.newBuilder().maximumSize(MAX_CACHE_ENTRIES)
                 .expireAfterWrite(config.cacheTtl()).build() : null;
+    }
+
+    /** AT Protocol OAuth's ceiling on the age of identity facts (DID document, PDS, handle). */
+    static final java.time.Duration MAX_IDENTITY_AGE = java.time.Duration.ofMinutes(10);
+
+    /**
+     * The identity cache holds identities built from documents the DID cache served, so an identity can be as old as
+     * both TTLs together: a WARN when {@code quarkus.did.cache-ttl + quarkus.atproto.identity.cache-ttl} exceeds 10
+     * minutes, else empty.
+     */
+    static Optional<String> cacheTtlWarning(java.time.Duration didTtl, java.time.Duration identityTtl) {
+        java.time.Duration sum = didTtl.plus(identityTtl);
+        if (sum.compareTo(MAX_IDENTITY_AGE) <= 0) {
+            return Optional.empty();
+        }
+        return Optional.of("quarkus.did.cache-ttl (" + didTtl + ") + quarkus.atproto.identity.cache-ttl (" + identityTtl
+                + ") = " + sum + ": resolved identities can be older than the 10 minutes AT Protocol OAuth allows; keep "
+                + "the two together at 10 minutes or less");
     }
 
     /**
@@ -326,6 +348,10 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
             return Uni.createFrom().failure(new IdentityResolutionFailed(did.value(),
                     "AT Protocol accounts use did:plc or did:web, not did:" + did.method()));
         }
+        Optional<String> webProblem = unsupportedDidWeb(did);
+        if (webProblem.isPresent()) {
+            return Uni.createFrom().failure(new IdentityResolutionFailed(did.value(), webProblem.get()));
+        }
         AtprotoIdentity cached = identities == null ? null : identities.getIfPresent(did);
         if (cached != null) {
             return Uni.createFrom().item(cached);
@@ -338,7 +364,7 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
                     Optional<String> key = doc.verificationMethod(SIGNING_KEY)
                             .map(VerificationMethod::publicKeyMultibase);
                     return verifiedHandle(did, doc).map(v -> {
-                        AtprotoIdentity identity = new AtprotoIdentity(did, v.handle(), pds, key);
+                        AtprotoIdentity identity = new AtprotoIdentity(did, v.handle(), pds, key, !v.cacheable());
                         if (identities != null && v.cacheable()) {
                             identities.put(did, identity);
                         }
@@ -346,6 +372,26 @@ public class IdentityResolverImpl implements ReactiveIdentityResolver {
                         return identity;
                     });
                 });
+    }
+
+    /**
+     * AT Protocol supports hostname-level {@code did:web} only: no path ({@code :} after the host) and no port
+     * ({@code %3A}) except on {@code localhost} (development). Why {@code did} is refused, or empty.
+     */
+    static Optional<String> unsupportedDidWeb(Did did) {
+        String prefix = "did:web:";
+        if (!did.value().startsWith(prefix)) {
+            return Optional.empty();
+        }
+        String id = did.value().substring(prefix.length());
+        if (id.indexOf(':') >= 0) {
+            return Optional.of("AT Protocol supports did:web at a hostname only, not with a path: " + abbreviate(id));
+        }
+        int port = id.toLowerCase(Locale.ROOT).indexOf("%3a");
+        if (port >= 0 && !id.substring(0, port).equalsIgnoreCase("localhost")) {
+            return Optional.of("AT Protocol supports did:web with a port on localhost only: " + abbreviate(id));
+        }
+        return Optional.empty();
     }
 
     /** Outcome of the reverse check; not cacheable when the handle could not be resolved for a transient reason. */

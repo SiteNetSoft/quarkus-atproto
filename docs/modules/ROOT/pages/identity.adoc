@@ -16,6 +16,7 @@ who.handle();               // verified handle, or Handle.INVALID
 who.handleVerified();
 who.pds();                  // https://host[:port]
 who.signingKeyMultibase();  // the #atproto key, Optional
+who.handleCheckFailed();    // true: handle.invalid only because the reverse check failed transiently
 ----
 
 == Rules
@@ -29,7 +30,12 @@ who.signingKeyMultibase();  // the #atproto key, Optional
   claim the handle you started from.
 * *PDS*: the `#atproto_pds` service of type `AtprotoPersonalDataServer`, a bare `https://host[:port]` origin (`http`
   only when `quarkus.safe-fetch.https-only=false`), else `NoPds`.
-* Only `did:plc` and `did:web` are accepted. Successes are cached for `cache-ttl`; failures are not.
+* Only `did:plc` and `did:web` are accepted, and `did:web` at a hostname only: a path (`did:web:host:u:alice`) or a
+  port (`%3A`, allowed on `localhost` only) fails with `IdentityResolutionFailed`. Successes are cached for
+  `cache-ttl`; failures are not.
+* The identities are built from DID documents that `quarkus-did` caches for `quarkus.did.cache-ttl`, so an identity can
+  be as old as both TTLs together. For AT Protocol OAuth keep `quarkus.did.cache-ttl + quarkus.atproto.identity.cache-ttl`
+  at 10 minutes or less (the defaults, 5m + 5m, do); startup WARNs when the sum is larger.
 
 == DNS
 
@@ -43,7 +49,7 @@ resolver configuration. Declare your own `TxtResolver` bean to replace it.
 |===
 |Property |Default |Purpose
 
-|`quarkus.atproto.identity.cache-ttl` |`5m` |Cache for handle → DID and DID → identity; `0` disables. Keep under 10 minutes for OAuth
+|`quarkus.atproto.identity.cache-ttl` |`5m` |Cache for handle → DID and DID → identity; `0` disables. For OAuth keep it plus `quarkus.did.cache-ttl` at 10 minutes or less (WARN at startup otherwise)
 |`quarkus.atproto.identity.dns.servers` |system resolver |DNS servers for the default `TxtResolver`, tried in order (`host`, `host:port`, `[v6]:port`)
 |`quarkus.atproto.identity.https-well-known-override."<handle>"` |none |*Test and dev only*: fetch the handle's well-known from `<base>/.well-known/atproto-did`. Ignored in production (normal launch mode) with a WARN
 |===

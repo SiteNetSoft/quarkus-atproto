@@ -16,8 +16,11 @@ import io.smallrye.config.WithDefault;
 public interface IdentityConfig {
 
     /**
-     * How long handle → DID and DID → identity results are cached. {@code 0} disables caching. Keep it under 10
-     * minutes when the results back AT Protocol OAuth. Failures are not cached.
+     * How long handle → DID and DID → identity results are cached. {@code 0} disables caching. Failures are not
+     * cached. The identities are built from DID documents that {@code quarkus.did.cache-ttl} caches too, so an
+     * identity can be as old as both TTLs together: when the results back AT Protocol OAuth, keep
+     * {@code quarkus.did.cache-ttl + quarkus.atproto.identity.cache-ttl} at 10 minutes or less (the defaults, 5m + 5m,
+     * do); a WARN at startup says when they exceed it.
      */
     @WithDefault("5m")
     Duration cacheTtl();

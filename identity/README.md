@@ -28,6 +28,7 @@ who.handle();               // verified handle, or Handle.INVALID (handle.invali
 who.handleVerified();
 who.pds();                  // https://host[:port]
 who.signingKeyMultibase();  // #atproto key, Optional
+who.handleCheckFailed();    // true: handle.invalid only because the reverse check failed transiently (not cached)
 ```
 
 ### Rules
@@ -45,9 +46,13 @@ who.signingKeyMultibase();  // #atproto key, Optional
 - **PDS**: the service `#atproto_pds` of type `AtprotoPersonalDataServer`, whose endpoint must be `https://host[:port]`
   (a trailing `/` is dropped; any other path, query, fragment or user info is rejected) → otherwise `NoPds`.
   `http` is accepted only when `quarkus.safe-fetch.https-only=false` (tests).
-- Only `did:plc` and `did:web` are AT Protocol account DIDs; others fail with `IdentityResolutionFailed`.
-- Both directions are cached for `cache-ttl`; failures are not cached. (`quarkus-did` caches DID documents
-  separately under `quarkus.did.cache-ttl`.)
+- Only `did:plc` and `did:web` are AT Protocol account DIDs; others fail with `IdentityResolutionFailed`. `did:web` is
+  hostname-level only, as AT Protocol requires: a path (`did:web:host:u:alice`) or a port (`did:web:host%3A8443`,
+  allowed on `localhost` only) fails with `IdentityResolutionFailed` before anything is fetched.
+- Both directions are cached for `cache-ttl`; failures are not cached. `quarkus-did` caches the DID documents the
+  identities are built from under `quarkus.did.cache-ttl`, so an identity can be as old as **both TTLs together**:
+  for AT Protocol OAuth keep `quarkus.did.cache-ttl + quarkus.atproto.identity.cache-ttl` at 10 minutes or less (the
+  defaults, 5m + 5m, do). Startup logs a WARN when the sum is larger.
 
 | Exception (all `IdentityException`) | When |
 | --- | --- |
@@ -65,7 +70,7 @@ CDI bean implementing `TxtResolver` to replace it (tests use a map).
 
 | Property | Default | Purpose |
 | --- | --- | --- |
-| `quarkus.atproto.identity.cache-ttl` | `5m` | Cache for handle → DID and DID → identity; `0` disables. Keep under 10 minutes for AT Protocol OAuth |
+| `quarkus.atproto.identity.cache-ttl` | `5m` | Cache for handle → DID and DID → identity; `0` disables. For AT Protocol OAuth keep it plus `quarkus.did.cache-ttl` at 10 minutes or less (WARN at startup otherwise) |
 | `quarkus.atproto.identity.dns.servers` | system resolver | DNS servers for the default `TxtResolver`, tried in order (`host`, `host:port`, `[v6]:port`) |
 | `quarkus.atproto.identity.https-well-known-override."<handle>"` | empty | **Test/dev only.** Fetch this handle's well-known from `<base URL>/.well-known/atproto-did` instead of `https://<handle>/…`, so a loopback server can stand in for the handle's host. Keys are case-insensitive. **Ignored in production** (normal launch mode, logged as a WARN) |
 

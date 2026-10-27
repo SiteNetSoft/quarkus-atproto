@@ -55,7 +55,8 @@ anonymous.
 
 AtprotoRecords mine = records.blockingForRepo(did, pdsUri, auth);   // or forRepo(...) for ReactiveAtprotoRecords
 RecordResult r = mine.create(Nsid.parse(Document.NSID), document);   // server-generated TID
-mine.put(collection, RecordKey.parse("self"), record, Optional.of(previousCid));
+mine.put(Nsid.parse(Document.NSID), RecordKey.parse(Tid.next().value()), document, Optional.empty()); // key: tid
+mine.put(profiles, RecordKey.parse("self"), profile, Optional.of(previousCid));  // a "literal:self" collection
 Optional<Document> d = mine.get(collection, rkey, Document.class);   // empty on RecordNotFound
 mine.delete(collection, rkey);
 BlobRef cover = mine.uploadBlob(bytes, "image/png");
@@ -70,6 +71,11 @@ Applications signed in through `quarkus-atproto-oauth` get the same API from `At
   is validated with `LexiconValidator` in the mode `quarkus.atproto.lexicon.validation` (`optimistic` by default).
   Problems fail with `RecordValidationException` (`collection()`, `problems()`). The default guard allows everything;
   the OAuth extension checks the granted scope.
+- A record key you choose (`create(collection, rkey, record)`, `put`) is checked against the Lexicon's record `key`
+  type (`tid`, `nsid`, `literal:<value>`, `any`) in the same mode: a slug such as `my-first-post` for
+  `site.standard.document` (key `tid`) is refused with a problem at path `rkey`, before anything is sent (a PDS that
+  does not know the Lexicon would store it, and validating readers would skip the record). Use `Tid.next()` for `tid`
+  collections.
 - `RecordResult` carries the record's `AtUri`, its CID and the PDS's `validationStatus`.
 
 ## Configuration

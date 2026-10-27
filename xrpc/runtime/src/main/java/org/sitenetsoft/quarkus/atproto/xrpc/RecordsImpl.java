@@ -2,9 +2,11 @@ package org.sitenetsoft.quarkus.atproto.xrpc;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -71,8 +73,22 @@ public class RecordsImpl {
 
   /** As {@link #forRepo(Did, URI, XrpcAuth)} with a specific guard (a session's granted scope). */
   public ReactiveAtprotoRecords forRepo(Did repo, URI pds, XrpcAuth auth, WriteGuard guard) {
+    Objects.requireNonNull(pds, "pds");
+    return forRepo(repo, () -> Uni.createFrom().item(pds), auth, guard);
+  }
+
+  /**
+   * As {@link #forRepo(Did, URI, XrpcAuth, WriteGuard)} with the PDS looked up for <b>each call</b> (after the
+   * record is checked, before it is sent): a long-lived view follows an account that moved PDS.
+   */
+  public ReactiveAtprotoRecords forRepo(Did repo, Supplier<Uni<URI>> pds, XrpcAuth auth, WriteGuard guard) {
     return new Bound(Objects.requireNonNull(repo, "repo"), Objects.requireNonNull(pds, "pds"),
         Optional.of(Objects.requireNonNull(auth, "auth")), Objects.requireNonNull(guard, "guard"));
+  }
+
+  /** Blocking form of {@link #forRepo(Did, Supplier, XrpcAuth, WriteGuard)}. */
+  public AtprotoRecords blockingForRepo(Did repo, Supplier<Uni<URI>> pds, XrpcAuth auth, WriteGuard guard) {
+    return blocking(forRepo(repo, pds, auth, guard));
   }
 
   public AtprotoRecords blockingForRepo(Did repo, URI pds, XrpcAuth auth) {
@@ -90,15 +106,21 @@ public class RecordsImpl {
 
   private final class Bound implements ReactiveAtprotoRecords {
     private final Did repo;
-    private final URI pds;
+    private final Supplier<Uni<URI>> pds;
     private final Optional<XrpcAuth> auth;
     private final WriteGuard guard;
 
-    Bound(Did repo, URI pds, Optional<XrpcAuth> auth, WriteGuard guard) {
+    Bound(Did repo, Supplier<Uni<URI>> pds, Optional<XrpcAuth> auth, WriteGuard guard) {
       this.repo = repo;
       this.pds = pds;
       this.auth = auth;
       this.guard = guard;
+    }
+
+    /** Where this call goes. */
+    private Uni<URI> pds() {
+      return Uni.createFrom().deferred(() -> Objects.requireNonNull(pds.get(), "pds"))
+          .map(p -> Objects.requireNonNull(p, "pds"));
     }
 
     @Override
@@ -112,9 +134,9 @@ public class RecordsImpl {
     }
 
     private Uni<RecordResult> createRecord(Nsid collection, RecordKey rkey, Object record) {
-      return prepare(collection, CREATE, record)
-          .chain(tree -> repoClient.createRecord(pds,
-              new CreateRecord.Input(repo, collection, rkey, null, tree, null), auth))
+      return prepare(collection, rkey, CREATE, record)
+          .chain(tree -> pds().chain(p -> repoClient.createRecord(p,
+              new CreateRecord.Input(repo, collection, rkey, null, tree, null), auth)))
           .map(o -> new RecordResult(o.uri(), o.cid(), Optional.ofNullable(o.validationStatus())));
     }
 
@@ -123,9 +145,9 @@ public class RecordsImpl {
       return Uni.createFrom().deferred(() -> {
         Objects.requireNonNull(rkey, "rkey");
         Cid swap = swapRecord == null ? null : swapRecord.orElse(null);
-        return prepare(collection, UPDATE, record)
-            .chain(tree -> repoClient.putRecord(pds,
-                new PutRecord.Input(repo, collection, rkey, null, tree, swap, null), auth))
+        return prepare(collection, rkey, UPDATE, record)
+            .chain(tree -> pds().chain(p -> repoClient.putRecord(p,
+                new PutRecord.Input(repo, collection, rkey, null, tree, swap, null), auth)))
             .map(o -> new RecordResult(o.uri(), o.cid(), Optional.ofNullable(o.validationStatus())));
       });
     }
@@ -134,7 +156,7 @@ public class RecordsImpl {
     public <T> Uni<Optional<T>> get(Nsid collection, RecordKey rkey, Class<T> type) {
       return Uni.createFrom().deferred(() -> {
         Objects.requireNonNull(type, "type");
-        return repoClient.getRecord(pds, new GetRecord.Params(repo, collection, rkey, null), auth)
+        return pds().chain(p -> repoClient.getRecord(p, new GetRecord.Params(repo, collection, rkey, null), auth))
             .map(o -> Optional.of(convert(o, type)))
             .onFailure(e -> e instanceof XrpcException x && GetRecord.ERROR_RECORD_NOT_FOUND.equals(x.error()))
             .recoverWithItem(Optional.empty());
@@ -159,8 +181,8 @@ public class RecordsImpl {
         Objects.requireNonNull(collection, "collection");
         Objects.requireNonNull(rkey, "rkey");
         guard.check(collection, DELETE, Optional.empty());
-        return repoClient.deleteRecord(pds, new DeleteRecord.Input(repo, collection, rkey, null, null), auth)
-            .replaceWithVoid();
+        return pds().chain(p -> repoClient.deleteRecord(p, new DeleteRecord.Input(repo, collection, rkey, null, null),
+            auth)).replaceWithVoid();
       });
     }
 
@@ -170,18 +192,24 @@ public class RecordsImpl {
         Objects.requireNonNull(data, "data");
         Objects.requireNonNull(mimeType, "mimeType");
         guard.check(UPLOAD_BLOB, CREATE, Optional.of(mimeType));
-        return repoClient.uploadBlob(pds, data, mimeType, auth).map(UploadBlob.Output::blob);
+        return pds().chain(p -> repoClient.uploadBlob(p, data, mimeType, auth)).map(UploadBlob.Output::blob);
       });
     }
 
-    /** Guard, then the record as JSON with its {@code $type}, then validation; all before anything is sent. */
-    private Uni<JsonNode> prepare(Nsid collection, String action, Object record) {
+    /**
+     * Guard, then the record as JSON with its {@code $type}, then validation of the record and of the record key
+     * ({@code rkey}, when the caller chose one) against the Lexicon's key type; all before anything is sent.
+     */
+    private Uni<JsonNode> prepare(Nsid collection, RecordKey rkey, String action, Object record) {
       return Uni.createFrom().item(() -> {
         Objects.requireNonNull(collection, "collection");
         Objects.requireNonNull(record, "record");
         guard.check(collection, action, Optional.empty());
         ObjectNode tree = typed(collection, record);
-        List<ValidationProblem> problems = validator.validate(collection, tree);
+        List<ValidationProblem> problems = new ArrayList<>(validator.validate(collection, tree));
+        if (rkey != null) {
+          validator.validateKey(collection, rkey).stream().filter(p -> !problems.contains(p)).forEach(problems::add);
+        }
         if (!problems.isEmpty()) {
           throw new RecordValidationException(collection, problems);
         }

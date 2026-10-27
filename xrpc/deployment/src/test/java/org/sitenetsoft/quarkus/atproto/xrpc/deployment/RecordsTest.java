@@ -42,12 +42,15 @@ import site.standard.Document;
 class RecordsTest {
 
     static final Nsid DOCUMENT = Nsid.parse(Document.NSID);
+    /** A test Lexicon whose record key type is {@code literal:self}. */
+    static final Nsid PROFILE = Nsid.parse("org.example.profile");
     static final Did REPO = Did.parse(PdsStub.REPO);
     static final XrpcAuth AUTH = r -> Uni.createFrom().item(r.withHeader("Authorization", "Bearer t"));
 
     @RegisterExtension
     static final QuarkusUnitTest TEST = new QuarkusUnitTest()
-            .withApplicationRoot(jar -> jar.addClasses(PdsStub.class))
+            .withApplicationRoot(jar -> jar.addClasses(PdsStub.class)
+                    .addAsResource("lexicons/profile.json", "META-INF/atproto/lexicons/org/example/profile.json"))
             .overrideConfigKey("quarkus.safe-fetch.https-only", "false")
             .overrideConfigKey("quarkus.safe-fetch.allow-private-addresses", "true");
 
@@ -107,10 +110,10 @@ class RecordsTest {
     @Test
     void untypedRecordGetsCollectionAsType() throws Exception {
         URI pds = PdsStub.service("ok");
-        records.blockingForRepo(REPO, pds, AUTH).create(DOCUMENT, RecordKey.parse("3kclienttid"),
+        records.blockingForRepo(REPO, pds, AUTH).create(DOCUMENT, RecordKey.parse("3kclienttidaa"),
                 Map.of("site", "https://example.com", "title", "T", "publishedAt", "2026-10-27T10:00:00.000Z"));
         JsonNode body = mapper.readTree(PdsStub.requests(pds).get(0).get("body").asText());
-        assertEquals("3kclienttid", body.get("rkey").asText());
+        assertEquals("3kclienttidaa", body.get("rkey").asText());
         assertEquals("site.standard.document", body.get("record").get("$type").asText());
     }
 
@@ -118,15 +121,55 @@ class RecordsTest {
     void putSendsRkeyAndSwap() throws Exception {
         URI pds = PdsStub.service("ok");
         RecordResult result = records.forRepo(REPO, pds, AUTH)
-                .put(DOCUMENT, RecordKey.parse("self"), document("Put"), Optional.of(Cid.parse(PdsStub.CID)))
+                .put(DOCUMENT, RecordKey.parse("3kputrecordaa"), document("Put"), Optional.of(Cid.parse(PdsStub.CID)))
                 .await().indefinitely();
-        assertEquals("self", result.uri().rkey().map(RecordKey::value).orElseThrow());
+        assertEquals("3kputrecordaa", result.uri().rkey().map(RecordKey::value).orElseThrow());
         JsonNode request = PdsStub.requests(pds).get(0);
         assertTrue(request.get("path").asText().endsWith("/xrpc/com.atproto.repo.putRecord"));
         JsonNode body = mapper.readTree(request.get("body").asText());
-        assertEquals("self", body.get("rkey").asText());
+        assertEquals("3kputrecordaa", body.get("rkey").asText());
         assertEquals(PdsStub.CID, body.get("swapRecord").asText());
         assertEquals("Put", body.get("record").get("title").asText());
+    }
+
+    @Test
+    void slugKeyRefusedForTidCollection() {
+        // site.standard.document declares key "tid": a slug key would be a non-conformant record forever
+        URI pds = PdsStub.service("ok");
+        AtprotoRecords blocking = records.blockingForRepo(REPO, pds, AUTH);
+        RecordKey slug = RecordKey.parse("my-first-post");
+        RecordValidationException put = assertThrows(RecordValidationException.class,
+                () -> blocking.put(DOCUMENT, slug, document("Slug"), Optional.empty()));
+        assertEquals(List.of("rkey"), put.problems().stream().map(p -> p.path()).toList());
+        assertTrue(put.getMessage().contains("my-first-post") && put.getMessage().contains("tid"), put.getMessage());
+        assertThrows(RecordValidationException.class, () -> blocking.create(DOCUMENT, slug, document("Slug")));
+        assertTrue(PdsStub.requests(pds).isEmpty(), "nothing sent to the PDS");
+    }
+
+    @Test
+    void tidKeyAccepted() throws Exception {
+        URI pds = PdsStub.service("ok");
+        RecordKey tid = RecordKey.parse(org.sitenetsoft.atproto.syntax.Tid.next().value());
+        records.blockingForRepo(REPO, pds, AUTH).put(DOCUMENT, tid, document("Tid"), Optional.empty());
+        records.blockingForRepo(REPO, pds, AUTH).create(DOCUMENT, tid, document("Tid"));
+        assertEquals(2, PdsStub.requests(pds).size());
+        assertEquals(tid.value(), mapper.readTree(PdsStub.requests(pds).get(0).get("body").asText()).get("rkey")
+                .asText());
+    }
+
+    @Test
+    void literalKeyChecked() {
+        URI pds = PdsStub.service("ok");
+        AtprotoRecords blocking = records.blockingForRepo(REPO, pds, AUTH);
+        Map<String, Object> profile = Map.of("name", "Alice");
+        blocking.put(PROFILE, RecordKey.parse("self"), profile, Optional.empty());
+        assertEquals(1, PdsStub.requests(pds).size());
+        RecordValidationException e = assertThrows(RecordValidationException.class,
+                () -> blocking.put(PROFILE, RecordKey.parse("other"), profile, Optional.empty()));
+        assertEquals("rkey", e.problems().get(0).path());
+        assertThrows(RecordValidationException.class, () -> blocking.create(PROFILE,
+                RecordKey.parse(org.sitenetsoft.atproto.syntax.Tid.next().value()), profile));
+        assertEquals(1, PdsStub.requests(pds).size());
     }
 
     @Test

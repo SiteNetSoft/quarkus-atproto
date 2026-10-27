@@ -46,6 +46,7 @@ import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.ExecutionTime;
 import io.quarkus.deployment.annotations.Record;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.RuntimeInitializedClassBuildItem;
 import io.quarkus.vertx.http.deployment.HttpRootPathBuildItem;
 import io.quarkus.vertx.http.deployment.RouteBuildItem;
@@ -127,6 +128,13 @@ class AtprotoOauthProcessor {
                 .handler(recorder.handler(LogoutHandler.class.getName())).build());
         routes.produce(RouteBuildItem.builder().routeFunction(recorder.route(Endpoint.UNLINK))
                 .handler(recorder.handler(UnlinkHandler.class.getName())).build());
+    }
+
+    /** {@code BeanHandler} looks the route handlers up by class name at runtime, which native images only allow for registered classes. */
+    @BuildStep
+    ReflectiveClassBuildItem routeHandlerClasses() {
+        return ReflectiveClassBuildItem.builder(MetadataHandler.class, JwksHandler.class, LoginHandler.class,
+                CallbackHandler.class, LogoutHandler.class, UnlinkHandler.class).build();
     }
 
     /**

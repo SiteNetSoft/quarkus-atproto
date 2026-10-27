@@ -20,7 +20,7 @@ import org.sitenetsoft.atproto.syntax.Nsid;
  * --out &lt;dir&gt;                   source root to write the generated .java files into
  * --index &lt;file&gt;                where to write the generated index (META-INF/atproto/lexicons/index.json)
  * [--package-prefix &lt;p&gt;]        optional package prefix
- * [--dependency-index &lt;file&gt;]   index of a dependency pack (index.json, or a pack .jar); repeatable
+ * [--dependency-index &lt;file&gt;]   index of a dependency pack (index.json, a pack .jar or its classes dir); repeatable
  * [--dependency-lexicons &lt;dir&gt;] Lexicon JSON of dependencies, read for ref resolution only; repeatable
  * </pre>
  *
@@ -28,7 +28,7 @@ import org.sitenetsoft.atproto.syntax.Nsid;
  */
 public final class Cli {
   private static final String USAGE = "usage: --lexicons <dir> --out <src dir> --index <file> "
-      + "[--package-prefix <p>] [--dependency-index <index.json|pack.jar>]... [--dependency-lexicons <dir>]...";
+      + "[--package-prefix <p>] [--dependency-index <index.json|pack.jar|classes dir>]... [--dependency-lexicons <dir>]...";
 
   private Cli() {
   }

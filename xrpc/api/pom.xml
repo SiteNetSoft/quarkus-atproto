@@ -12,6 +12,7 @@
   <description>XRPC client interfaces shared by lexicon packs and the XRPC runtime.</description>
   <dependencies>
     <dependency><groupId>io.smallrye.reactive</groupId><artifactId>mutiny</artifactId></dependency>
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-syntax</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>

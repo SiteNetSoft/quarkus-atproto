@@ -32,6 +32,9 @@
     <surefire-plugin.version>3.5.3</surefire-plugin.version>
     <compiler-plugin.version>3.14.0</compiler-plugin.version>
     <javapoet.version>0.22.0</javapoet.version>
+    <exec-plugin.version>3.6.3</exec-plugin.version>
+    <build-helper-plugin.version>3.6.1</build-helper-plugin.version>
+    <dependency-plugin.version>3.8.1</dependency-plugin.version>
   </properties>
   <dependencyManagement>
     <dependencies>
@@ -52,6 +55,20 @@
   <build>
     <pluginManagement>
       <plugins>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>exec-maven-plugin</artifactId>
+          <version>${exec-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>build-helper-maven-plugin</artifactId>
+          <version>${build-helper-plugin.version}</version>
+        </plugin>
+        <plugin>
+          <artifactId>maven-dependency-plugin</artifactId>
+          <version>${dependency-plugin.version}</version>
+        </plugin>
         <plugin>
           <groupId>io.quarkus</groupId>
           <artifactId>quarkus-extension-maven-plugin</artifactId>

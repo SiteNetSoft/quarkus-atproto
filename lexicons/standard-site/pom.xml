@@ -20,6 +20,41 @@
   <build>
     <plugins>
       <plugin>
+        <!--
+          Sets the property org.sitenetsoft.quarkus:atproto-lexicons-core:jar to the core pack as this build resolved
+          it: the installed jar, the reactor's packaged jar, or core's target/classes when the reactor stops before
+          package. The generator reads core's index.json from any of the three, so Standard.site refs to com.atproto
+          defs resolve to the core pack's classes instead of being generated again.
+        -->
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>locate-core-pack</id>
+            <phase>initialize</phase>
+            <goals><goal>properties</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>generate-lexicon-classes</id>
+            <phase>generate-sources</phase>
+            <goals><goal>java</goal></goals>
+            <configuration>
+              <arguments>
+                <argument>--lexicons</argument><argument>${lexicon.source.dir}</argument>
+                <argument>--out</argument><argument>${lexicon.generated.sources}</argument>
+                <argument>--index</argument><argument>${lexicon.index}</argument>
+                <argument>--dependency-index</argument><argument>${org.sitenetsoft.quarkus:atproto-lexicons-core:jar}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
         <configuration>
           <annotationProcessorPaths combine.self="override"/>

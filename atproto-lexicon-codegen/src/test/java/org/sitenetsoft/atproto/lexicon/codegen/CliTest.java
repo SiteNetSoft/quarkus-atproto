@@ -32,6 +32,15 @@ class CliTest {
     assertEquals("site.standard.Document", GeneratedIndex.read(siteIndex).get("site.standard.document#main"));
   }
 
+  @Test void dependencyIndexCanBeAClassesDirectory() throws Exception {
+    // In a reactor build that stops before package, a pack dependency resolves to its target/classes directory.
+    Path classes = tmp.resolve("classes");
+    GeneratedIndex.write(classes.resolve(GeneratedIndex.RESOURCE), Map.of("a.b.c#main", "a.b.C"));
+    assertEquals(Map.of("a.b.c#main", "a.b.C"), GeneratedIndex.read(classes));
+    Path empty = Files.createDirectories(tmp.resolve("empty"));
+    assertThrows(LexiconException.class, () -> GeneratedIndex.read(empty));
+  }
+
   @Test void badArgumentsThrowInsteadOfExiting() {
     IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
         () -> Cli.main(new String[] {"--out", tmp.toString()}));

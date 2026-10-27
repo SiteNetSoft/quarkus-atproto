@@ -1,0 +1,41 @@
+{
+  "$type": "site.standard.publication",
+  "basicTheme": {
+    "$type": "site.standard.theme.basic",
+    "accent": {
+      "$type": "site.standard.theme.color#rgb",
+      "b": 255,
+      "g": 102,
+      "r": 158
+    },
+    "accentForeground": {
+      "$type": "site.standard.theme.color#rgb",
+      "b": 255,
+      "g": 255,
+      "r": 255
+    },
+    "background": {
+      "$type": "site.standard.theme.color#rgb",
+      "b": 255,
+      "g": 255,
+      "r": 255
+    },
+    "foreground": {
+      "$type": "site.standard.theme.color#rgb",
+      "b": 17,
+      "g": 17,
+      "r": 17
+    }
+  },
+  "description": "DaPurpleSharpie’s journey through the free and open-source side of the Internet, with a brief detour into offline events she hosts and visits.",
+  "icon": {
+    "$type": "blob",
+    "ref": {
+      "$link": "bafkreie2pd7dqnj2rxyfilg45hpohna73p7ykfmeax4m4rg7wjxyg6ktye"
+    },
+    "mimeType": "image/png",
+    "size": 34552
+  },
+  "name": "Sharpie Posts",
+  "url": "https://sharpiepls.com"
+}

@@ -1,0 +1,92 @@
+{
+  "path": "/being-online-is-worth-it-sometimes-hs9jt4e",
+  "site": "at://did:plc:xtuer24wmkwitvr2ajjeewra/site.standard.publication/3m5kfo2mq624d",
+  "tags": [
+    "Rant",
+    "social media"
+  ],
+  "$type": "site.standard.document",
+  "title": "Being Online is Worth It Sometimes",
+  "labels": {
+    "$type": "com.atproto.label.defs#selfLabels",
+    "values": [
+      {
+        "val": "sexual"
+      }
+    ]
+  },
+  "content": {
+    "$type": "blog.pckt.content",
+    "items": [
+      {
+        "$type": "blog.pckt.block.image",
+        "attrs": {
+          "alt": "1000046081.jpg",
+          "src": "blob:bafkreihdpokroytj4h2vjoxyuthk2clqjbcaslmgrjfcypjbmmnovvvp3i",
+          "blob": {
+            "ref": {
+              "$link": "bafkreihdpokroytj4h2vjoxyuthk2clqjbcaslmgrjfcypjbmmnovvvp3i"
+            },
+            "size": 145174,
+            "$type": "blob",
+            "mimeType": "image/jpeg"
+          },
+          "align": "center",
+          "placeholder": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD//gA7Q1JFQVRPUjogZ2QtanBlZyB2MS4wICh1c2luZyBJSkcgSlBFRyB2ODApLCBxdWFsaXR5ID0gNDAK/9sAQwAUDg8SDw0UEhASFxUUGB4yIR4cHB49LC4kMklATEtHQEZFUFpzYlBVbVZFRmSIZW13e4GCgU5gjZeMfZZzfoF8/9sAQwEVFxceGh47ISE7fFNGU3x8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8/8AAEQgABwAMAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/aAAwDAQACEQMRAD8ApWd5DboVdASTnJ//AFVWvpI5rgvHgAjsKKKyvodXLaVz/9k=",
+          "naturalWidth": 1920,
+          "naturalHeight": 1080
+        }
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": ""
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "facets": [
+          {
+            "index": {
+              "byteEnd": 83,
+              "byteStart": 70
+            },
+            "features": [
+              {
+                "did": "did:plc:v46ojbiop5ebs5h7gaomixcc",
+                "$type": "blog.pckt.richtext.facet#didMention"
+              }
+            ]
+          }
+        ],
+        "plaintext": "A couples of months, I got some stickers from this platform thanks to @brookie.blog. As of now, they're both plastered on my laptop and water bottle. This isn't the first that I got sent something from anyone online, but this definitely got me thinking about my presence all over the place, digitally."
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "A good chunk of my time online has just been me expanding that digital footprint by feeding it the growth I had throughout my upbringing. All the lessons learned, all the changes in different parts of my identity, the whole experience of becoming my own person. Or at least the ways that I could be when I used to live with my family, which I believe what made being online a more crucial part of my life than the average user. As one of the many results of that, reaching out has been a skill that I constantly flex without even thinking about it. It might have made me more of a social person as a whole now that I'm able to express that out in the world. When I had that realization, I couldn't think of what I would be without those circumstances."
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "It's just one of those moments where the \"what ifs\" of it all can only really consume you when you let it (and with the way that I overthink, that happens more that I would like to admit here). With that said, there have been moment where I wanted to be less close to my antics. Sometimes out of fear of \"being too much\", but mostly because I really wanna focus on the things I could become if I let the whereabouts of my city take me to where that path can take me. As someone still going down that path, I like the stops I got to look at."
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "It got me to blend the parts of me I always wanted to express irl with the parts of me I wouldn't have really focused in on otherwise. It got me to meet folks I've messaged with for years, as well as just being known in ways I never thought I was able to. It's why having these stickers sent to me is really cool. It's proof of how far I gotten."
+      },
+      {
+        "$type": "blog.pckt.block.text",
+        "plaintext": "And I'm really excited to see where I go next!"
+      }
+    ]
+  },
+  "updatedAt": "2026-07-03T19:01:48.000Z",
+  "coverImage": {
+    "ref": {
+      "$link": "bafkreihdpokroytj4h2vjoxyuthk2clqjbcaslmgrjfcypjbmmnovvvp3i"
+    },
+    "size": 145174,
+    "$type": "blob",
+    "mimeType": "image/jpeg"
+  },
+  "description": "A couples of months, I got some stickers from this platform thanks to . As of now, they're both plastered on my laptop and water bottle. This isn't the first that I got sent something from anyone online, but this definitely got me thinking about my presence all over the place, digitally. A good chunk of my time online has just been me expanding that digital footprint by feeding it the growth I had throughout my upbringing. All the lessons learned, all the changes in different parts of my identit...",
+  "publishedAt": "2026-07-03T19:01:48.000Z",
+  "textContent": "A couples of months, I got some stickers from this platform thanks to . As of now, they're both plastered on my laptop and water bottle. This isn't the first that I got sent something from anyone online, but this definitely got me thinking about my presence all over the place, digitally.\nA good chunk of my time online has just been me expanding that digital footprint by feeding it the growth I had throughout my upbringing. All the lessons learned, all the changes in different parts of my identity, the whole experience of becoming my own person. Or at least the ways that I could be when I used to live with my family, which I believe what made being online a more crucial part of my life than the average user. As one of the many results of that, reaching out has been a skill that I constantly flex without even thinking about it. It might have made me more of a social person as a whole now that I'm able to express that out in the world. When I had that realization, I couldn't think of what I would be without those circumstances.\nIt's just one of those moments where the \"what ifs\" of it all can only really consume you when you let it (and with the way that I overthink, that happens more that I would like to admit here). With that said, there have been moment where I wanted to be less close to my antics. Sometimes out of fear of \"being too much\", but mostly because I really wanna focus on the things I could become if I let the whereabouts of my city take me to where that path can take me. As someone still going down that path, I like the stops I got to look at.\nIt got me to blend the parts of me I always wanted to express irl with the parts of me I wouldn't have really focused in on otherwise. It got me to meet folks I've messaged with for years, as well as just being known in ways I never thought I was able to. It's why having these stickers sent to me is really cool. It's proof of how far I gotten.\nAnd I'm really excited to see where I go next!"
+}

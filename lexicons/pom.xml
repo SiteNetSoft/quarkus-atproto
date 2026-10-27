@@ -14,4 +14,63 @@
     <module>core</module>
     <module>standard-site</module>
   </modules>
+  <properties>
+    <!-- A pack's Lexicon JSON (shipped as is) and where the classes and index generated from it go. -->
+    <lexicon.source.dir>${project.basedir}/src/main/resources/META-INF/atproto/lexicons</lexicon.source.dir>
+    <lexicon.generated.sources>${project.build.directory}/generated-sources/lexicon</lexicon.generated.sources>
+    <lexicon.generated.resources>${project.build.directory}/generated-resources/lexicon</lexicon.generated.resources>
+    <lexicon.index>${lexicon.generated.resources}/META-INF/atproto/lexicons/index.json</lexicon.index>
+  </properties>
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!--
+          Runs the generator's Cli in generate-sources. The generator is a plugin dependency, not a dependency of the
+          pack, so it never reaches the pack's consumers. Packs declare the execution with their own arguments
+          (paths absolute: exec:java runs in Maven's JVM, whose working directory is wherever mvn was started).
+        -->
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>exec-maven-plugin</artifactId>
+          <configuration>
+            <mainClass>org.sitenetsoft.atproto.lexicon.codegen.Cli</mainClass>
+            <includeProjectDependencies>false</includeProjectDependencies>
+            <includePluginDependencies>true</includePluginDependencies>
+            <cleanupDaemonThreads>false</cleanupDaemonThreads>
+          </configuration>
+          <dependencies>
+            <dependency>
+              <groupId>org.sitenetsoft.quarkus</groupId>
+              <artifactId>atproto-lexicon-codegen</artifactId>
+              <version>${project.version}</version>
+            </dependency>
+          </dependencies>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>add-lexicon-sources</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources><source>${lexicon.generated.sources}</source></sources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>add-lexicon-index</id>
+            <phase>generate-resources</phase>
+            <goals><goal>add-resource</goal></goals>
+            <configuration>
+              <resources><resource><directory>${lexicon.generated.resources}</directory></resource></resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

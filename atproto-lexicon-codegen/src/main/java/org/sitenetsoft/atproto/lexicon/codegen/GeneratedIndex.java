@@ -49,9 +49,19 @@ public final class GeneratedIndex {
     }
   }
 
-  /** Reads an index file, or the {@value #RESOURCE} entry of a {@code .jar}. */
+  /**
+   * Reads an index file, the {@value #RESOURCE} entry of a {@code .jar}, or {@value #RESOURCE} below a classes
+   * directory (what a pack dependency resolves to in a reactor build that stops before {@code package}).
+   */
   public static Map<String, String> read(Path file) {
     try {
+      if (Files.isDirectory(file)) {
+        Path entry = file.resolve(RESOURCE);
+        if (!Files.isRegularFile(entry)) {
+          throw new LexiconException(file + ": no " + RESOURCE + " (not a Lexicon pack?)");
+        }
+        file = entry;
+      }
       if (file.getFileName().toString().endsWith(".jar")) {
         try (ZipFile zip = new ZipFile(file.toFile())) {
           ZipEntry e = zip.getEntry(RESOURCE);

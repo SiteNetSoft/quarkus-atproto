@@ -19,5 +19,6 @@
 - Open unions accept unknown `$type`s; closed ones don't. The record's own `$type` must equal the collection.
 - `LexiconRegistry` (`knows`, `def`, `document`, `nsids`) is filled at build time; adding Lexicon JSON at run time is
   not supported. The managed `ObjectMapper` has `AtprotoSyntaxModule` registered.
-- Native: pack classes (every `index.json` entry and its nested classes) are registered for reflection automatically;
-  types generated from `src/main/lexicons` are not: add `@RegisterForReflection(targets = ...)` for those you serialise.
+- Native: pack classes (every `index.json` entry and its nested classes) and the types generated from
+  `src/main/lexicons` (through the generated `AtprotoLexiconReflection` holder) are registered for reflection
+  automatically; don't add `@RegisterForReflection` for them.

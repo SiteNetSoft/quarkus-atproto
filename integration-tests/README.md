@@ -35,8 +35,7 @@ the test JVM and returns the configuration the application is launched with:
 | Property | Value |
 | --- | --- |
 | `quarkus.atproto.oauth.client-base-url` | `https://app.example.test` (a confidential client: the development client is refused in normal mode) |
-| `quarkus.atproto.oauth.signing-key.location` | an ES256 key generated per run (`target/it-client-key.pem`) |
-| `quarkus.atproto.oauth.session.encryption-key` | random per run |
+| `quarkus.config.locations` | `target/it-secrets.properties`: `signing-key.location` (an ES256 key generated per run, `target/it-client-key.pem`) and a random `session.encryption-key`, kept out of the launch command line |
 | `quarkus.did.plc.url` | the fake PLC directory |
 | `quarkus.atproto.identity.dns.servers` | the `FakeDns` (`_atproto.alice.example.test` TXT); the well-known override is ignored in normal mode |
 | `quarkus.safe-fetch.https-only`, `quarkus.safe-fetch.allow-private-addresses` | `false`, `true` |

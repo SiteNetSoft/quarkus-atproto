@@ -27,7 +27,8 @@ import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
  * is, only with loopback fakes behind the URLs:
  * <ul>
  * <li>a <b>confidential client</b>: {@code client-base-url} {@value #BASE} (an ES256 key generated per run, an
- * encryption key for the session cookie). The fake authorization server fetches the client metadata and JWKS of
+ * encryption key for the session cookie; both in {@code target/it-secrets.properties}, passed with
+ * {@code quarkus.config.locations} so they stay out of the launch command line). The fake authorization server fetches the client metadata and JWKS of
  * {@value #BASE} from the application on {@code http://127.0.0.1:<quarkus.http.test-port>}, and the tests call the
  * callback URL's path on that port;</li>
  * <li>handles resolve through <b>DNS</b>: {@code quarkus.atproto.identity.dns.servers} names a {@link FakeDns} that
@@ -69,8 +70,9 @@ public class AtprotoFakes implements QuarkusTestResourceLifecycleManager {
 
         Map<String, String> config = new HashMap<>();
         config.put("quarkus.atproto.oauth.client-base-url", BASE);
-        config.put("quarkus.atproto.oauth.signing-key.location", signingKey().toString());
-        config.put("quarkus.atproto.oauth.session.encryption-key", randomKey());
+        // the per-run secrets go through a config file, not -D system properties (those are printed in the
+        // launcher's "Executing" log line)
+        config.put("quarkus.config.locations", secretsFile().toUri().toString());
         config.put("quarkus.did.plc.url", fake.plcUrl().toString());
         config.put("quarkus.atproto.identity.dns.servers", dns.server());
         config.put("quarkus.safe-fetch.https-only", "false");
@@ -91,6 +93,22 @@ public class AtprotoFakes implements QuarkusTestResourceLifecycleManager {
         }
         if (dns != null) {
             dns.close();
+        }
+    }
+
+    /** {@code target/it-secrets.properties}: the signing key location and the session encryption key. */
+    private static Path secretsFile() {
+        try {
+            Path file = Path.of("target", "it-secrets.properties").toAbsolutePath();
+            java.util.Properties p = new java.util.Properties();
+            p.setProperty("quarkus.atproto.oauth.signing-key.location", signingKey().toString());
+            p.setProperty("quarkus.atproto.oauth.session.encryption-key", randomKey());
+            try (var out = Files.newOutputStream(file)) {
+                p.store(out, "per-run secrets of the integration tests");
+            }
+            return file;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 

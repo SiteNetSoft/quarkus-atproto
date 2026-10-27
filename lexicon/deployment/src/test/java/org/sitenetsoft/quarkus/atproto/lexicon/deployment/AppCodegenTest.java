@@ -75,6 +75,13 @@ class AppCodegenTest {
         ClassLoader loader = compile(list(out));
         Class<?> noteClass = loader.loadClass("org.example.Note");
         assertEquals("site.standard.Document", noteClass.getMethod("about").getReturnType().getName());
+
+        // native: the generated types are registered for reflection by a generated holder class
+        Class<?> holder = loader.loadClass("org.example." + AtprotoLexiconCodeGen.REFLECTION_HOLDER);
+        io.quarkus.runtime.annotations.RegisterForReflection r = holder
+                .getAnnotation(io.quarkus.runtime.annotations.RegisterForReflection.class);
+        assertTrue(r != null && !r.ignoreNested(), "holder not annotated: " + holder);
+        assertTrue(java.util.Arrays.asList(r.targets()).contains(noteClass), java.util.Arrays.toString(r.targets()));
     }
 
     @Test

@@ -28,6 +28,13 @@ import io.vertx.ext.web.RoutingContext;
 @ApplicationScoped
 public class AtprotoOAuthAuthenticationMechanism implements HttpAuthenticationMechanism {
 
+    /**
+     * Above the built-in mechanisms (basic auth is 2000, form 1000): in {@code login} mode a signed-out request must get
+     * this mechanism's challenge (a plain 401), not a basic-auth prompt that could never succeed. In {@code link} mode
+     * {@link #getChallenge} returns nothing, so the application's own mechanism still challenges.
+     */
+    public static final int PRIORITY = 3000;
+
     private final OAuthConfig config;
     private final SessionCookie cookie;
 
@@ -57,6 +64,11 @@ public class AtprotoOAuthAuthenticationMechanism implements HttpAuthenticationMe
             return Uni.createFrom().nullItem(); // link mode: the application's own mechanism challenges
         }
         return Uni.createFrom().item(new ChallengeData(401, null, null));
+    }
+
+    @Override
+    public int getPriority() {
+        return PRIORITY;
     }
 
     @Override

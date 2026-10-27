@@ -59,6 +59,10 @@ the session records it (`AtprotoUser.scope()`) and writes are checked against it
 
 In each mode the other mode's endpoint (logout or unlink) is not served.
 
+The extension's authentication mechanism has priority 3000 (above basic auth's 2000 and form's 1000): in `login` mode
+a signed-out request to a protected page gets its plain 401 even when the application also enables basic auth, never
+a basic-auth prompt. In `link` mode it issues no challenge, so the application's own mechanism challenges.
+
 ### Starting a sign-in
 
 The login endpoint accepts only `POST` (form `handle`, optional local `redirect`), and only **same-origin**: when the

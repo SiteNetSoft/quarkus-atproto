@@ -103,5 +103,6 @@ it directly.
 
 Lexicon JSON is registered as native-image resources. Every class named in a `META-INF/atproto/lexicons/index.json`
 (the packs) is registered for reflection with its nested classes, so Jackson can read and write the generated records
-and unions. Types generated from the application's own `src/main/lexicons` have no index: annotate the ones you
-(de)serialise in native mode with `@RegisterForReflection(targets = ...)`.
+and unions. For the application's own `src/main/lexicons` the code generator also writes `AtprotoLexiconReflection`
+(in the package of the first generated type), annotated `@RegisterForReflection(ignoreNested = false, targets = ...)`
+with every generated class, so they are registered as well. Nothing to do by hand.

@@ -83,5 +83,5 @@ try it against your own Bluesky account, follow xref:live-check.adoc[the live ch
 
 Every extension works in native mode (GraalVM/Mandrel 25 for Quarkus 3.40). The lexicon extension registers the Lexicon
 JSON as resources and every class listed in a pack's `META-INF/atproto/lexicons/index.json` (with its nested types)
-for reflection. Types generated from your own `src/main/lexicons` are not listed in an index: in native mode annotate
-the classes you serialise with `@RegisterForReflection(targets = ...)`.
+for reflection; types generated from your own `src/main/lexicons` are registered by a generated
+`AtprotoLexiconReflection` class. Nothing to configure by hand.

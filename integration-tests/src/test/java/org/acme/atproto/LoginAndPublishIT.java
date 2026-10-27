@@ -85,7 +85,11 @@ class LoginAndPublishIT {
         assertEquals(403, browser.postForm("/atproto/login", Map.of("handle", AtprotoFakes.HANDLE),
                 "https://evil.example").statusCode());
         assertEquals(0, AtprotoFakes.fake().as().parCount());
-        assertEquals(401, browser.get("/me").statusCode());
+        HttpResponse<String> me = browser.get("/me");
+        assertEquals(401, me.statusCode());
+        // basic auth is enabled in the sample (for link mode), but signed-out users here must not get its prompt
+        assertTrue(me.headers().allValues("WWW-Authenticate").stream()
+                .noneMatch(v -> v.toLowerCase(java.util.Locale.ROOT).startsWith("basic")), me.headers()::toString);
         assertEquals(401, browser.post("/publish/publication?name=x&url=https%3A%2F%2Fx.example").statusCode());
     }
 }

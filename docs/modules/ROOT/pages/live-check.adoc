@@ -62,7 +62,13 @@ The answer is `{"uri": ..., "cid": ..., "value": {"$type": "site.standard.docume
 |The sign-in fails with `invalid_scope` (the authorization server refuses the granular scopes)
 |Retry with a fallback: add `quarkus.atproto.oauth.fallback-scope=atproto transition:generic` to
 `integration-tests/src/main/resources/application.properties` (dev mode reloads it) and sign in again. The granted
-scope then shown by `/me` is `transition:generic`, which covers all repository writes.
+scope then shown by `/me` is `atproto transition:generic`, which covers all repository writes.
+
+|The authorization server rejects the client itself (`invalid_client_metadata`, or an error about the `client_id`'s
+scope) before any consent page
+|The fallback cannot help here: the fallback scope is only tried after a PAR `invalid_scope`. Request the broad scope
+directly: set `quarkus.atproto.oauth.scope=atproto transition:generic` in `application.properties` and sign in
+again.
 
 |401 at the callback (`/atproto/oauth/callback`)
 |The callback must come back to the browser that started the sign-in, with its binding cookie: use the same browser,

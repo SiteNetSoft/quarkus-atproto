@@ -78,5 +78,6 @@ array sizes, blob `accept` and `maxSize`, closed and open unions, refs across fi
 == Native
 
 The Lexicon JSON is registered as native-image resources, and every class listed in an `index.json` (the packs) is
-registered for reflection with its nested types. Annotate types generated from your own `src/main/lexicons` that you
-serialise with `@RegisterForReflection(targets = ...)`.
+registered for reflection with its nested types. Types generated from your own `src/main/lexicons` are registered too:
+the code generator writes an `AtprotoLexiconReflection` class next to them, annotated
+`@RegisterForReflection(ignoreNested = false, targets = ...)` with every generated class. Nothing to do by hand.

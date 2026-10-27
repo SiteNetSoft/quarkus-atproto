@@ -68,6 +68,11 @@ class LinkModeIT {
         Browser anonymous = Browser.anonymous();
         assertEquals(401, anonymous.postForm("/atproto/login", Map.of("handle", AtprotoFakes.HANDLE)).statusCode());
         assertEquals(0, AtprotoFakes.fake().as().parCount());
+        // link mode: the application's own mechanism (basic auth) challenges
+        HttpResponse<String> me = anonymous.get("/me");
+        assertEquals(401, me.statusCode());
+        assertTrue(me.headers().allValues("WWW-Authenticate").stream()
+                .anyMatch(v -> v.toLowerCase(java.util.Locale.ROOT).startsWith("basic")), me.headers()::toString);
         HttpResponse<String> page = anonymous.get("/");
         assertEquals(200, page.statusCode());
         assertTrue(page.body().contains("Link mode"), page.body());

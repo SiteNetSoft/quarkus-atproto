@@ -20,4 +20,12 @@ class DatetimeTest {
   @Test void ofInstant() {
     assertEquals("1985-04-12T23:20:50.123Z", Datetime.of(Instant.parse("1985-04-12T23:20:50.123Z")).toString());
   }
+  @Test void noBypassConstructor() {
+    assertEquals(0, Datetime.class.getConstructors().length);
+    assertTrue(java.lang.reflect.Modifier.isFinal(Datetime.class.getModifiers()));
+  }
+  @Test void arbitraryFractionDigits() {
+    String s = "1985-04-12T23:20:50." + "1".repeat(60) + "Z";
+    assertEquals(s, Datetime.parse(s).toString());
+  }
 }

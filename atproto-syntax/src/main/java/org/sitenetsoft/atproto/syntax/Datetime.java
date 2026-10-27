@@ -9,12 +9,38 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** An RFC 3339 datetime (AT Protocol profile). {@link #toString()} returns the original string. */
-public record Datetime(String value, Instant instant) {
+public final class Datetime {
   private static final Pattern PATTERN = Pattern.compile(
       "(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d+))?(Z|[+-]\\d{2}:\\d{2})");
 
+  private final String value;
+  private final Instant instant;
+
+  private Datetime(String value, Instant instant) {
+    this.value = value;
+    this.instant = instant;
+  }
+
+  public String value() {
+    return value;
+  }
+
+  public Instant instant() {
+    return instant;
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    return o instanceof Datetime d && d.value.equals(value);
+  }
+
+  @Override
+  public int hashCode() {
+    return value.hashCode();
+  }
+
   public static Datetime parse(String s) {
-    if (s == null || s.length() > 64) {
+    if (s == null || s.length() > 1024) {
       throw new SyntaxException("Invalid datetime: " + Did.abbreviate(s));
     }
     Matcher m = PATTERN.matcher(s);

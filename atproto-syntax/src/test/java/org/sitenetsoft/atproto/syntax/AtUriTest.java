@@ -26,4 +26,10 @@ class AtUriTest {
     AtUri u = AtUri.of(Did.parse("did:plc:a"), Nsid.parse("app.bsky.feed.post"), RecordKey.parse("self"));
     assertEquals("at://did:plc:a/app.bsky.feed.post/self", u.toString());
   }
+  @Test void ofRejectsNulls() {
+    Did d = Did.parse("did:plc:a");
+    assertThrows(SyntaxException.class, () -> AtUri.of(null));
+    assertThrows(SyntaxException.class, () -> AtUri.of(d, null));
+    assertThrows(SyntaxException.class, () -> AtUri.of(null, Nsid.parse("a.b.c")));
+  }
 }

@@ -22,10 +22,16 @@ public final class AtUri {
   }
 
   public static AtUri of(AtIdentifier authority, Nsid collection) {
+    if (authority == null || collection == null) {
+      throw new SyntaxException("AT-URI parts must not be null");
+    }
     return new AtUri(authority, collection, null);
   }
 
   public static AtUri of(AtIdentifier authority) {
+    if (authority == null) {
+      throw new SyntaxException("AT-URI parts must not be null");
+    }
     return new AtUri(authority, null, null);
   }
 

@@ -15,6 +15,13 @@ class HandleTest {
     assertFalse(Handle.isValid("x.arpa"));
     assertTrue(Handle.isValid("x.test"));
   }
+  @Test void parseSyntaxSkipsTldPolicy() {
+    assertEquals("alice.local", Handle.parseSyntax("Alice.Local").value());
+    assertThrows(SyntaxException.class, () -> Handle.parseSyntax("not a handle"));
+    assertEquals("at://alice.local/app.bsky.feed.post/x",
+        AtUri.parseSyntax("at://alice.local/app.bsky.feed.post/x").toString());
+    assertThrows(SyntaxException.class, () -> AtUri.parse("at://alice.local/app.bsky.feed.post/x"));
+  }
   @Test void invalidConstant() {
     assertEquals("handle.invalid", Handle.INVALID.toString());
     assertEquals(Handle.INVALID, Handle.parse("handle.invalid"));

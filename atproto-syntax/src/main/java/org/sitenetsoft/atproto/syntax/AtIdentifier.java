@@ -11,6 +11,14 @@ public sealed interface AtIdentifier permits Did, Handle {
     return s.startsWith("did:") ? Did.parse(s) : Handle.parse(s);
   }
 
+  /** As {@link #parse}, a handle checked for syntax only ({@link Handle#parseSyntax}). */
+  static AtIdentifier parseSyntax(String s) {
+    if (s == null) {
+      throw new SyntaxException("Invalid AT identifier: null");
+    }
+    return s.startsWith("did:") ? Did.parse(s) : Handle.parseSyntax(s);
+  }
+
   static boolean isValid(String s) {
     try {
       parse(s);

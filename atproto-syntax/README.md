@@ -17,7 +17,7 @@ Status: experimental, version 0.1.
 | Type | Notes |
 | --- | --- |
 | `Did` | `did:<method>:<id>`; `method()`, `isBlessed()` (`plc`, `web`) |
-| `Handle` | stored lowercase; `Handle.normalise(userInput)` strips a leading `@` and a trailing `.`; disallowed TLDs (`.local`, `.arpa`, `.example`, `.internal`, `.invalid`, `.localhost`, `.onion`, `.alt`) refused; `Handle.INVALID` = `handle.invalid` |
+| `Handle` | stored lowercase; `Handle.normalise(userInput)` strips a leading `@` and a trailing `.`; `Handle.parse`/`normalise` refuse the disallowed TLDs (`.local`, `.arpa`, `.example`, `.internal`, `.invalid`, `.localhost`, `.onion`, `.alt`); `Handle.parseSyntax` checks the syntax only (data written by others); `Handle.INVALID` = `handle.invalid` |
 | `AtIdentifier` | sealed: `Did` or `Handle` |
 | `Nsid` | `authority()`, `name()`, `segments()`, `authorityDomain()` |
 | `RecordKey`, `RecordKeyType` | record keys; Lexicon key types `tid`, `nsid`, `literal:<v>`, `any` with `accepts(key)` |
@@ -28,5 +28,7 @@ Status: experimental, version 0.1.
 | `Language` | BCP 47 tag |
 
 `parse` and the constructors throw `SyntaxException` (an `IllegalArgumentException`); every type has `isValid(String)`.
-`AtprotoSyntaxModule` (Jackson) reads and writes them as strings; the Quarkus extensions register it on the managed
+`AtprotoSyntaxModule` (Jackson) reads and writes them as strings (handles, also as AT-URI authorities and AT
+identifiers, are read syntax-only, as the Lexicon `handle` format validates them, so records from other apps read
+back; `AtUri.parseSyntax` is the matching parse); the Quarkus extensions register it on the managed
 `ObjectMapper`.

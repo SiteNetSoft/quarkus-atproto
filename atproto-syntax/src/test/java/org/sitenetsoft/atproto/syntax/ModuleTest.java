@@ -20,6 +20,21 @@ class ModuleTest {
     assertTrue(json.contains("\"who\":\"b.test\""), json);
     assertEquals(d, m.readValue(json, Doc.class));
   }
+  record Refs(Handle handle, AtUri uri, AtIdentifier who) {}
+
+  @Test void handlesReadSyntaxOnly() throws Exception {
+    // a record another app wrote: the Lexicon handle format accepts .local, so reading it back must too
+    ObjectMapper m = new ObjectMapper().registerModule(new AtprotoSyntaxModule());
+    String json = "{\"handle\":\"Alice.Local\",\"uri\":\"at://alice.local/app.bsky.feed.post/x\","
+        + "\"who\":\"bob.onion\"}";
+    Refs r = m.readValue(json, Refs.class);
+    assertEquals("alice.local", r.handle().value());
+    assertEquals("at://alice.local/app.bsky.feed.post/x", r.uri().toString());
+    assertEquals("{\"handle\":\"alice.local\",\"uri\":\"at://alice.local/app.bsky.feed.post/x\",\"who\":\"bob.onion\"}",
+        m.writeValueAsString(r));
+    assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class,
+        () -> m.readValue("\"not a handle\"", Handle.class));
+  }
   @Test void badValueFails() {
     ObjectMapper m = new ObjectMapper().registerModule(new AtprotoSyntaxModule());
     assertThrows(com.fasterxml.jackson.core.JsonProcessingException.class, () -> m.readValue("\"nope\"", Did.class));

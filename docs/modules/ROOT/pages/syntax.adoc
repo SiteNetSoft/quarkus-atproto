@@ -18,7 +18,7 @@ interop fixtures.
 |Type |Notes
 
 |`Did` |`did:<method>:<id>`; `method()`, `isBlessed()` (`plc` and `web`, the AT Protocol account methods)
-|`Handle` |Stored lowercase. `Handle.normalise(userInput)` strips a leading `@` and a trailing `.` before parsing (what a user types: `@Alice.bsky.social.`). Disallowed TLDs (`.local`, `.arpa`, `.example`, ...) are refused; `Handle.INVALID` is `handle.invalid`, the placeholder for a handle that failed verification
+|`Handle` |Stored lowercase. `Handle.normalise(userInput)` strips a leading `@` and a trailing `.` before parsing (what a user types: `@Alice.bsky.social.`). `Handle.parse` and `normalise` refuse disallowed TLDs (`.local`, `.arpa`, `.example`, ...), the policy for user input; `Handle.parseSyntax` (and `AtUri.parseSyntax`) check the syntax only, for data written by others; `Handle.INVALID` is `handle.invalid`, the placeholder for a handle that failed verification
 |`AtIdentifier` |Sealed: `Did` or `Handle`
 |`Nsid` |`authority()`, `name()`, `segments()`, `authorityDomain()`
 |`RecordKey`, `RecordKeyType` |Record keys and the Lexicon `key` types (`tid`, `nsid`, `literal:<value>`, `any`); `RecordKeyType.accepts(key)`
@@ -29,5 +29,7 @@ interop fixtures.
 |`Language` |BCP 47 language tag
 |===
 
-`AtprotoSyntaxModule` is a Jackson module (de)serialising every type above as its string form. The Quarkus extensions
+`AtprotoSyntaxModule` is a Jackson module (de)serialising every type above as its string form. It reads handles
+(also as AT-URI authorities and AT identifiers) syntax-only, as the Lexicon validator checks the `handle` format, so a
+record another app wrote with `alice.local` reads back into a generated type. The Quarkus extensions
 register it on the managed `ObjectMapper`; outside Quarkus, `mapper.registerModule(new AtprotoSyntaxModule())`.

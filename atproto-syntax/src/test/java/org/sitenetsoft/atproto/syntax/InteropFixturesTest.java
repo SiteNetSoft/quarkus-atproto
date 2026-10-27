@@ -35,7 +35,11 @@ class InteropFixturesTest {
       new Kind("datetime", Datetime::parse, null),
       new Kind("atidentifier", AtIdentifier::parse, null),
       new Kind("cid", Cid::parse, null),
-      new Kind("language", Language::parse, null));
+      new Kind("language", Language::parse, null),
+      // the syntax-only parses (Jackson, records read back) accept exactly the fixtures' valid lines
+      new Kind("handle", Handle::parseSyntax, null),
+      new Kind("aturi", AtUri::parseSyntax, null),
+      new Kind("atidentifier", AtIdentifier::parseSyntax, null));
 
   static List<String> lines(String name) {
     try (InputStream in = InteropFixturesTest.class.getResourceAsStream("/interop/syntax/" + name)) {

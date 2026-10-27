@@ -35,7 +35,27 @@ public final class AtUri {
     return new AtUri(authority, null, null);
   }
 
+  /** Parses; a handle authority must pass {@link Handle#parse} (syntax and the disallowed-TLD policy). */
   public static AtUri parse(String s) {
+    return parse(s, AtIdentifier::parse);
+  }
+
+  /** Parses with a handle authority checked for syntax only ({@link Handle#parseSyntax}), for data read back. */
+  public static AtUri parseSyntax(String s) {
+    return parse(s, AtIdentifier::parseSyntax);
+  }
+
+  /** Whether {@link #parseSyntax} accepts {@code s}. */
+  public static boolean isValidSyntax(String s) {
+    try {
+      parseSyntax(s);
+      return true;
+    } catch (SyntaxException e) {
+      return false;
+    }
+  }
+
+  private static AtUri parse(String s, java.util.function.Function<String, AtIdentifier> identifier) {
     if (s == null || s.length() > 8192 || !s.startsWith("at://")) {
       throw new SyntaxException("Invalid AT-URI: " + Did.abbreviate(s));
     }
@@ -44,7 +64,7 @@ public final class AtUri {
       throw new SyntaxException("Invalid AT-URI (too many path segments): " + Did.abbreviate(s));
     }
     try {
-      AtIdentifier authority = AtIdentifier.parse(parts[0]);
+      AtIdentifier authority = identifier.apply(parts[0]);
       Nsid collection = parts.length > 1 ? Nsid.parse(parts[1]) : null;
       RecordKey rkey = parts.length > 2 ? RecordKey.parse(parts[2]) : null;
       return new AtUri(authority, collection, rkey);

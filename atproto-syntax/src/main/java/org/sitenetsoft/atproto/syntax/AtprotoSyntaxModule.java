@@ -10,20 +10,25 @@ import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import java.io.IOException;
 import java.util.function.Function;
 
-/** Jackson module (de)serialising every syntax type as a plain JSON string. */
+/**
+ * Jackson module (de)serialising every syntax type as a plain JSON string. Handles (also as AT-URI authorities and AT
+ * identifiers) are read with the syntax-only rule ({@link Handle#parseSyntax}), as the Lexicon validator checks the
+ * {@code handle} format: a record another app wrote with {@code alice.local} reads back. The disallowed-TLD policy is
+ * for user input ({@link Handle#parse}, {@link Handle#normalise}).
+ */
 public class AtprotoSyntaxModule extends SimpleModule {
   private static final long serialVersionUID = 1L;
 
   public AtprotoSyntaxModule() {
     super("AtprotoSyntaxModule");
     string(Did.class, Did::parse);
-    string(Handle.class, Handle::parse);
+    string(Handle.class, Handle::parseSyntax);
     string(Nsid.class, Nsid::parse);
     string(Tid.class, Tid::parse);
     string(RecordKey.class, RecordKey::parse);
     string(RecordKeyType.class, RecordKeyType::parse);
-    string(AtUri.class, AtUri::parse);
-    string(AtIdentifier.class, AtIdentifier::parse);
+    string(AtUri.class, AtUri::parseSyntax);
+    string(AtIdentifier.class, AtIdentifier::parseSyntax);
     string(Datetime.class, Datetime::parse);
     string(Cid.class, Cid::parse);
     string(Language.class, Language::parse);

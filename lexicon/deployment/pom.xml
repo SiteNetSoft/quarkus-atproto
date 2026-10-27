@@ -16,8 +16,18 @@
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-jackson-deployment</artifactId></dependency>
     <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-lexicon-codegen</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-junit5-internal</artifactId><scope>test</scope></dependency>
+    <!-- Lexicon packs for the registry, validator and codegen tests (the packs depend on the runtime module only). -->
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-lexicons-core</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-lexicons-standard-site</artifactId><version>${project.version}</version><scope>test</scope></dependency>
   </dependencies>
   <build>
+    <testResources>
+      <testResource><directory>src/test/resources</directory></testResource>
+      <!-- the app Lexicon used by AppCodegenTest (as the CodeGenProvider input) and the validator tests -->
+      <testResource><directory>src/test/lexicons</directory><targetPath>lexicons</targetPath></testResource>
+      <!-- real Standard.site records committed with the pack (source and fetch date in its README) -->
+      <testResource><directory>${project.basedir}/../../lexicons/standard-site/src/test/resources/records</directory><targetPath>records</targetPath></testResource>
+    </testResources>
     <plugins>
       <plugin><artifactId>maven-compiler-plugin</artifactId></plugin>
       <plugin><artifactId>maven-surefire-plugin</artifactId></plugin>

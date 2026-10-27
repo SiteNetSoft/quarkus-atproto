@@ -1,0 +1,45 @@
+{
+  "lexicon": 1,
+  "id": "org.example.note",
+  "description": "Test Lexicon: an app-owned record that refers to the Standard.site document pack type.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["text", "createdAt"],
+        "nullable": ["mood"],
+        "properties": {
+          "text": {"type": "string", "maxLength": 3000, "maxGraphemes": 300},
+          "createdAt": {"type": "string", "format": "datetime"},
+          "about": {"type": "ref", "ref": "site.standard.document"},
+          "embed": {"type": "union", "closed": true, "refs": ["#link", "#quote"]},
+          "attachment": {"type": "union", "refs": ["#link"]},
+          "priority": {"type": "integer", "minimum": 1, "maximum": 5},
+          "kind": {"type": "string", "enum": ["draft", "final"]},
+          "version": {"type": "integer", "const": 1},
+          "mood": {"type": "string", "knownValues": ["happy", "sad"]},
+          "data": {"type": "bytes", "maxLength": 4},
+          "link": {"type": "cid-link"},
+          "extra": {"type": "unknown"},
+          "langs": {"type": "array", "maxLength": 2, "items": {"type": "string", "format": "language"}},
+          "author": {"type": "string", "format": "at-identifier"},
+          "homepage": {"type": "string", "format": "uri"},
+          "avatar": {"type": "blob", "accept": ["*/*"]},
+          "pinned": {"type": "boolean"}
+        }
+      }
+    },
+    "link": {
+      "type": "object",
+      "required": ["uri"],
+      "properties": {"uri": {"type": "string", "format": "uri"}}
+    },
+    "quote": {
+      "type": "object",
+      "required": ["ref"],
+      "properties": {"ref": {"type": "ref", "ref": "com.atproto.repo.strongRef"}}
+    }
+  }
+}

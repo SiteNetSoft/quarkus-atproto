@@ -1,0 +1,13 @@
+name: "AT Protocol Lexicon"
+artifact: ${project.groupId}:${project.artifactId}:${project.version}
+description: "Lexicon runtime validation and build-time Java code generation from lexicon JSON"
+metadata:
+  keywords:
+    - "atproto"
+    - "bluesky"
+    - "lexicon"
+    - "codegen"
+  guide: "https://github.com/SiteNetSoft/quarkus-atproto"
+  categories:
+    - "web"
+  status: "experimental"

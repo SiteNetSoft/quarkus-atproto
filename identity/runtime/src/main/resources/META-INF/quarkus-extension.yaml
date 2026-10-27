@@ -1,0 +1,14 @@
+name: "AT Protocol Identity"
+artifact: ${project.groupId}:${project.artifactId}:${project.version}
+description: "Resolve AT Protocol identities: handle and DID resolution with verification, PDS and signing-key lookup"
+metadata:
+  keywords:
+    - "atproto"
+    - "bluesky"
+    - "identity"
+    - "did"
+    - "handle"
+  guide: "https://github.com/SiteNetSoft/quarkus-atproto"
+  categories:
+    - "web"
+  status: "experimental"

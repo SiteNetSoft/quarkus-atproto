@@ -1,0 +1,14 @@
+name: "AT Protocol OAuth"
+artifact: ${project.groupId}:${project.artifactId}:${project.version}
+description: "AT Protocol OAuth client: PAR, PKCE, DPoP and private_key_jwt for confidential clients"
+metadata:
+  keywords:
+    - "atproto"
+    - "bluesky"
+    - "oauth"
+    - "dpop"
+    - "security"
+  guide: "https://github.com/SiteNetSoft/quarkus-atproto"
+  categories:
+    - "security"
+  status: "experimental"

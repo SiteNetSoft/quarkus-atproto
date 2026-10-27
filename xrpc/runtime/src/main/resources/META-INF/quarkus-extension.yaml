@@ -1,0 +1,13 @@
+name: "AT Protocol XRPC"
+artifact: ${project.groupId}:${project.artifactId}:${project.version}
+description: "AT Protocol XRPC client with identity-aware PDS routing and typed lexicon calls"
+metadata:
+  keywords:
+    - "atproto"
+    - "bluesky"
+    - "xrpc"
+    - "client"
+  guide: "https://github.com/SiteNetSoft/quarkus-atproto"
+  categories:
+    - "web"
+  status: "experimental"

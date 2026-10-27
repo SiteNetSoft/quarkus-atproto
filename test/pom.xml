@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.sitenetsoft.quarkus</groupId>
+    <artifactId>quarkus-atproto-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>quarkus-atproto-test</artifactId>
+  <name>Quarkus AT Protocol - Test Support</name>
+  <description>Test fixtures: fake PDS, fake authorization server, fake PLC directory</description>
+  <dependencies>
+    <dependency><groupId>io.vertx</groupId><artifactId>vertx-web</artifactId></dependency>
+    <dependency><groupId>io.vertx</groupId><artifactId>vertx-web-client</artifactId></dependency>
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>multikey</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId></dependency>
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-syntax</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths combine.self="override"/>
+          <proc>none</proc>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables combine.self="override"/>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

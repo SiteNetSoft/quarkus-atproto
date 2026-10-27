@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.sitenetsoft.quarkus</groupId>
+    <artifactId>quarkus-atproto-lexicons-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>atproto-lexicons-core</artifactId>
+  <name>AT Protocol - Core Lexicons</name>
+  <description>com.atproto.* lexicon pack (repo and label subset) with generated types.</description>
+  <dependencies>
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-syntax</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>quarkus-atproto-lexicon</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-xrpc-api</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths combine.self="override"/>
+          <proc>none</proc>
+        </configuration>
+      </plugin>
+      <plugin>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables combine.self="override"/>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

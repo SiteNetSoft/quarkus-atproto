@@ -35,13 +35,12 @@ public final class Jws {
     }
 
     /**
-     * Signs {@code claims} with {@code key} (P-256). {@code alg} is set to {@code ES256}; a header asking for another
-     * algorithm is refused.
+     * Signs {@code claims} with {@code key} (P-256). {@code alg} is always {@code ES256} and set here: a caller header
+     * containing {@code alg} (any value, even {@code null}) is refused.
      */
     public static String sign(Map<String, Object> header, Map<String, Object> claims, PrivateKey key) {
-        Object alg = header.get("alg");
-        if (alg != null && !ES256.equals(alg)) {
-            throw new IllegalArgumentException("Only ES256 is supported, not " + alg);
+        if (header.containsKey("alg")) {
+            throw new IllegalArgumentException("The header must not set alg: Jws always signs ES256");
         }
         Map<String, Object> h = new LinkedHashMap<>();
         h.put("alg", ES256);

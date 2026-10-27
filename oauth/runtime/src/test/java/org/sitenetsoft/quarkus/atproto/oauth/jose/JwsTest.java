@@ -61,6 +61,12 @@ class JwsTest {
     void rejectsOtherAlgorithmsAndMalformedInput() {
         assertThrows(IllegalArgumentException.class,
                 () -> Jws.sign(Map.of("alg", "none"), Map.of(), KEY.getPrivate()));
+        // alg is always set by Jws: any caller value is refused, even ES256 or null
+        assertThrows(IllegalArgumentException.class,
+                () -> Jws.sign(Map.of("alg", "ES256"), Map.of(), KEY.getPrivate()));
+        Map<String, Object> nullAlg = new java.util.HashMap<>();
+        nullAlg.put("alg", null);
+        assertThrows(IllegalArgumentException.class, () -> Jws.sign(nullAlg, Map.of(), KEY.getPrivate()));
         assertThrows(IllegalArgumentException.class, () -> Jws.parseUnverified("a.b"));
         String hs = b64("{\"alg\":\"HS256\"}") + "." + b64("{}") + "." + b64("x");
         assertFalse(Jws.verify(hs, KEY.getPublic()));

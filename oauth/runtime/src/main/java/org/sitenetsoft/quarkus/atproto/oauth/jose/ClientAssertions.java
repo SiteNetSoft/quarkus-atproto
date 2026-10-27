@@ -25,7 +25,6 @@ public final class ClientAssertions {
      */
     public static String assertion(ClientKey key, String clientId, String audienceIssuer, Instant now) {
         Map<String, Object> header = new LinkedHashMap<>();
-        header.put("alg", Jws.ES256);
         header.put("kid", key.kid());
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("iss", clientId);

@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.sitenetsoft.multikey.Jwk;
+import org.sitenetsoft.quarkus.atproto.oauth.Origins;
 
 /** DPoP proofs (RFC 9449 §4): {@code dpop+jwt}, ES256, the public key in the {@code jwk} header. */
 public final class DpopProofs {
@@ -35,7 +36,6 @@ public final class DpopProofs {
             Optional<String> accessToken, Instant now) {
         Map<String, Object> header = new LinkedHashMap<>();
         header.put("typ", "dpop+jwt");
-        header.put("alg", Jws.ES256);
         header.put("jwk", Jwk.of(dpopKey.getPublic()));
         Map<String, Object> claims = new LinkedHashMap<>();
         claims.put("jti", jti());
@@ -52,13 +52,11 @@ public final class DpopProofs {
         return Jws.b64(sha256(accessToken.getBytes(StandardCharsets.US_ASCII)));
     }
 
-    /** {@code uri} without query and fragment. */
+    /** {@code uri} without user info, query and fragment; scheme and host lower case; default port omitted. */
     public static String htu(URI uri) {
-        if (uri.getScheme() == null || uri.getRawAuthority() == null) {
-            throw new IllegalArgumentException("htu must be an absolute http(s) URL");
-        }
         String path = uri.getRawPath() == null ? "" : uri.getRawPath();
-        return uri.getScheme() + "://" + uri.getRawAuthority() + path;
+        // origin form: no user info, lower-case scheme and host, default port dropped (RFC 9449 §4.3 normalisation)
+        return Origins.of(uri) + path;
     }
 
     /** 16 random bytes, base64url: a JWT id. */

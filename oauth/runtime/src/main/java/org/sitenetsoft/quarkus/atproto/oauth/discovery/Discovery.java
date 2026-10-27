@@ -2,7 +2,6 @@ package org.sitenetsoft.quarkus.atproto.oauth.discovery;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.Locale;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -10,9 +9,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
 import org.sitenetsoft.atproto.syntax.AtIdentifier;
 import org.sitenetsoft.quarkus.atproto.identity.ReactiveIdentityResolver;
+import org.sitenetsoft.quarkus.atproto.oauth.Origins;
 import org.sitenetsoft.quarkus.safefetch.FetchOptions;
 import org.sitenetsoft.quarkus.safefetch.FetchResponse;
 import org.sitenetsoft.quarkus.safefetch.ReactiveSafeFetchClient;
+import org.sitenetsoft.quarkus.safefetch.SafeFetchConfig;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,10 +38,13 @@ public class Discovery {
 
     private final ReactiveIdentityResolver identities;
     private final ReactiveSafeFetchClient http;
+    private final boolean allowHttp;
 
-    public Discovery(ReactiveIdentityResolver identities, ReactiveSafeFetchClient http) {
+    public Discovery(ReactiveIdentityResolver identities, ReactiveSafeFetchClient http, SafeFetchConfig safeFetch) {
         this.identities = identities;
         this.http = http;
+        // safe-fetch refuses http fetches anyway; this keeps browser redirects (authorization_endpoint) consistent
+        this.allowHttp = !safeFetch.httpsOnly();
     }
 
     /** Handle or DID → account, PDS and checked authorization server. */
@@ -74,7 +78,7 @@ public class Discovery {
     public Uni<AuthorizationServerMetadata> authorizationServer(URI issuer) {
         String expected = origin(issuer, "authorization_servers");
         return fetch(URI.create(expected).resolve(AUTHORIZATION_SERVER), "authorization-server-metadata", false)
-                .map(doc -> AuthorizationServerMetadata.parseAndCheck(doc.orElseThrow(), expected));
+                .map(doc -> AuthorizationServerMetadata.parseAndCheck(doc.orElseThrow(), expected, allowHttp));
     }
 
     private Uni<AuthorizationServerMetadata> fromProtectedResource(URI origin, JsonNode doc) {
@@ -84,6 +88,7 @@ public class Discovery {
                     "'" + pr.resource().get() + "' is not the origin it was fetched from, '" + origin + "'");
         }
         URI as = pr.authorizationServer();
+        AuthorizationServerMetadata.requireScheme("authorization_servers", as, allowHttp);
         if (!isOrigin(as)) {
             throw new OAuthDiscoveryException("authorization_servers", "'" + as + "' is not an origin URL");
         }
@@ -140,18 +145,12 @@ public class Discovery {
         }
     }
 
-    /** {@code scheme://host[:port]}, lower case, default ports omitted. */
+    /** {@link Origins#of}, failing as {@code check}. */
     static String origin(URI uri, String check) {
-        if (uri.getScheme() == null || uri.getHost() == null) {
-            throw new OAuthDiscoveryException(check, "'" + uri + "' is not an absolute URL");
+        try {
+            return Origins.of(uri);
+        } catch (IllegalArgumentException e) {
+            throw new OAuthDiscoveryException(check, e.getMessage());
         }
-        String scheme = uri.getScheme().toLowerCase(Locale.ROOT);
-        if (!scheme.equals("https") && !scheme.equals("http")) {
-            throw new OAuthDiscoveryException(check, "'" + uri + "' is not an http(s) URL");
-        }
-        int port = uri.getPort();
-        boolean defaultPort = port == -1 || (scheme.equals("https") && port == 443)
-                || (scheme.equals("http") && port == 80);
-        return scheme + "://" + uri.getHost().toLowerCase(Locale.ROOT) + (defaultPort ? "" : ":" + port);
     }
 }

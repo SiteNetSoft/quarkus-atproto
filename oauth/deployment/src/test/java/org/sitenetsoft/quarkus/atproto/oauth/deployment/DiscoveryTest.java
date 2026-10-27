@@ -27,6 +27,7 @@ import io.quarkus.test.QuarkusUnitTest;
 public class DiscoveryTest {
 
     static final String HANDLE = "alice.example.test";
+    static final String AS_METADATA = "/.well-known/oauth-authorization-server";
     static final int[] PORTS = FakeAtproto.reservePorts(DiscoveryTest.class.getName() + ".ports");
     static final FakeAtproto FAKE = FakeAtproto.start(PORTS[0], PORTS[1], PORTS[2]);
     static final FakeAccount ALICE = FAKE.account(HANDLE);
@@ -105,6 +106,71 @@ public class DiscoveryTest {
         FAKE.clear();
         FAKE.as().overrideMetadata("dpop_signing_alg_values_supported", List.of("RS256"));
         assertEquals("dpop_signing_alg_values_supported", failure().check());
+    }
+
+    @Test
+    void protectedResourceNotFoundOnHandlePathFails() {
+        FAKE.pds().protectedResourceStatus(404);
+        assertEquals("protected-resource-metadata", failure().check());
+        // no fallback to treating the PDS as its own authorization server on the account path
+        assertTrue(FAKE.pds().requests().stream().noneMatch(r -> r.path().equals(AS_METADATA)));
+        assertTrue(FAKE.as().requests().stream().noneMatch(r -> r.path().equals(AS_METADATA)));
+    }
+
+    @Test
+    void crossOriginRedirectRefused() {
+        FAKE.pds().redirectProtectedResourceTo(FAKE.asUrl() + AS_METADATA);
+        OAuthDiscoveryException e = failure();
+        assertEquals("protected-resource-metadata", e.check());
+        assertTrue(e.getMessage().contains("redirected to another origin"), e.getMessage());
+    }
+
+    @Test
+    void resourceMismatchRejected() {
+        FAKE.pds().overrideProtectedResource("resource", "https://other.example");
+        assertEquals("resource", failure().check());
+    }
+
+    @Test
+    void authorizationServerMustBeAnOrigin() {
+        String as = FAKE.asUrl().toString();
+        for (String entry : List.of(as + "/oauth", as + "/?x=1", as.replace("http://", "http://user@"),
+                "javascript://" + FAKE.asUrl().getAuthority() + "/")) {
+            FAKE.pds().authorizationServers(List.of(entry));
+            assertEquals("authorization_servers", failure().check(), entry);
+        }
+    }
+
+    @Test
+    void issuerMustMatchExactly() {
+        FAKE.as().overrideMetadata("issuer", FAKE.as().issuer() + "/");
+        assertEquals("issuer", failure().check());
+        FAKE.as().overrideMetadata("issuer", FAKE.as().issuer().replace("http://", "HTTP://"));
+        assertEquals("issuer", failure().check());
+        // a different-case host: AuthorizationServerMetadataTest (the fake's host is an IP literal)
+    }
+
+    @Test
+    void oversizedMetadataRejected() {
+        FAKE.as().overrideMetadata("padding", "x".repeat(70 * 1024));
+        assertEquals("authorization-server-metadata", failure().check());
+    }
+
+    @Test
+    void endpointsMustBeHttpsOrAllowedHttpOnTheIssuerOrigin() {
+        String authority = FAKE.asUrl().getAuthority();
+        FAKE.as().overrideMetadata("authorization_endpoint", "javascript://" + authority + "/oauth/authorize");
+        assertEquals("authorization_endpoint", failure().check());
+        FAKE.clear();
+        FAKE.as().overrideMetadata("token_endpoint", "https://other.example/oauth/token");
+        assertEquals("token_endpoint", failure().check());
+        FAKE.clear();
+        FAKE.as().overrideMetadata("pushed_authorization_request_endpoint", "http://127.0.0.2:" + FAKE.asUrl().getPort()
+                + "/oauth/par");
+        assertEquals("pushed_authorization_request_endpoint", failure().check());
+        FAKE.clear();
+        FAKE.as().overrideMetadata("revocation_endpoint", "https://other.example/oauth/revoke");
+        assertEquals("revocation_endpoint", failure().check());
     }
 
     private DiscoveredServer resolve() {

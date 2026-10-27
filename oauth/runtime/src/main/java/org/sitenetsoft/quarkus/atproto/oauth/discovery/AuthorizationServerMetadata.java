@@ -5,11 +5,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+import org.sitenetsoft.quarkus.atproto.oauth.Origins;
+
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
  * OAuth 2.0 Authorization Server Metadata (RFC 8414) after the AT Protocol checks: {@code issuer} equals the origin it
- * was fetched from; PAR required; {@code iss} in authorization responses; client ID metadata documents; ES256 DPoP.
+ * was fetched from; PAR required; {@code iss} in authorization responses; client ID metadata documents; ES256 DPoP;
+ * every endpoint used is {@code https} (plain {@code http} only when safe-fetch allows it) and on the issuer's origin.
  */
 public record AuthorizationServerMetadata(String issuer, URI authorizationEndpoint, URI tokenEndpoint,
         URI pushedAuthorizationRequestEndpoint, Optional<URI> revocationEndpoint, List<String> scopesSupported,
@@ -25,9 +28,10 @@ public record AuthorizationServerMetadata(String issuer, URI authorizationEndpoi
     /**
      * Parses and checks {@code doc}, fetched from {@code expectedIssuer}{@code /.well-known/oauth-authorization-server}.
      *
+     * @param allowHttp whether {@code http} endpoints are acceptable ({@code quarkus.safe-fetch.https-only=false})
      * @throws OAuthDiscoveryException naming the first failed check
      */
-    static AuthorizationServerMetadata parseAndCheck(JsonNode doc, String expectedIssuer) {
+    static AuthorizationServerMetadata parseAndCheck(JsonNode doc, String expectedIssuer, boolean allowHttp) {
         String issuer = text(doc, "issuer").orElseThrow(() -> new OAuthDiscoveryException("issuer", "missing"));
         if (!issuer.equals(expectedIssuer)) {
             throw new OAuthDiscoveryException("issuer",
@@ -40,9 +44,10 @@ public record AuthorizationServerMetadata(String issuer, URI authorizationEndpoi
         if (!dpopAlgs.contains("ES256")) {
             throw new OAuthDiscoveryException("dpop_signing_alg_values_supported", "ES256 is not listed");
         }
-        return new AuthorizationServerMetadata(issuer, endpoint(doc, "authorization_endpoint"),
-                endpoint(doc, "token_endpoint"), endpoint(doc, "pushed_authorization_request_endpoint"),
-                text(doc, "revocation_endpoint").map(v -> url("revocation_endpoint", v)),
+        return new AuthorizationServerMetadata(issuer, endpoint(doc, "authorization_endpoint", issuer, allowHttp),
+                endpoint(doc, "token_endpoint", issuer, allowHttp),
+                endpoint(doc, "pushed_authorization_request_endpoint", issuer, allowHttp),
+                text(doc, "revocation_endpoint").map(v -> url("revocation_endpoint", v, issuer, allowHttp)),
                 strings(doc, "scopes_supported"), dpopAlgs, strings(doc, "token_endpoint_auth_methods_supported"));
     }
 
@@ -53,19 +58,38 @@ public record AuthorizationServerMetadata(String issuer, URI authorizationEndpoi
         }
     }
 
-    private static URI endpoint(JsonNode doc, String member) {
-        return url(member, text(doc, member).orElseThrow(() -> new OAuthDiscoveryException(member, "missing")));
+    private static URI endpoint(JsonNode doc, String member, String issuer, boolean allowHttp) {
+        return url(member, text(doc, member).orElseThrow(() -> new OAuthDiscoveryException(member, "missing")), issuer,
+                allowHttp);
     }
 
-    private static URI url(String member, String value) {
+    /** An endpoint URL: https (http only when allowed), no user info, on the issuer's origin. */
+    private static URI url(String member, String value, String issuer, boolean allowHttp) {
+        URI uri;
         try {
-            URI uri = URI.create(value);
-            if (uri.getScheme() == null || uri.getHost() == null) {
-                throw new OAuthDiscoveryException(member, "not an absolute URL");
-            }
-            return uri;
+            uri = URI.create(value);
         } catch (IllegalArgumentException e) {
             throw new OAuthDiscoveryException(member, "not a URL");
+        }
+        if (uri.getScheme() == null || uri.getHost() == null) {
+            throw new OAuthDiscoveryException(member, "'" + value + "' is not an absolute URL with a host");
+        }
+        requireScheme(member, uri, allowHttp);
+        if (uri.getRawUserInfo() != null || uri.getRawFragment() != null) {
+            throw new OAuthDiscoveryException(member, "'" + value + "' must not have user info or a fragment");
+        }
+        if (!Origins.of(uri).equals(issuer)) {
+            throw new OAuthDiscoveryException(member, "'" + value + "' is not on the issuer's origin '" + issuer + "'");
+        }
+        return uri;
+    }
+
+    /** {@code https}, or {@code http} when {@code allowHttp}; anything else fails naming {@code member}. */
+    static void requireScheme(String member, URI uri, boolean allowHttp) {
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme();
+        if (!scheme.equals("https") && !(allowHttp && scheme.equals("http"))) {
+            throw new OAuthDiscoveryException(member, "'" + uri + "' must use https"
+                    + (allowHttp ? " or http" : " (quarkus.safe-fetch.https-only is on)"));
         }
     }
 

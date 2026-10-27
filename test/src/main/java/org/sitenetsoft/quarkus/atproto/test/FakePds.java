@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.sitenetsoft.atproto.syntax.AtUri;
@@ -75,6 +76,10 @@ public final class FakePds {
   private final Map<String, String> commits = new LinkedHashMap<>();
 
   private volatile List<String> authorizationServers;
+  private final Map<String, Optional<Object>> protectedResourceOverrides =
+      new ConcurrentHashMap<>();
+  private volatile int protectedResourceStatus = 200;
+  private volatile String protectedResourceRedirect;
 
   FakePds(FakeAtproto fake) {
     this.fake = fake;
@@ -86,7 +91,16 @@ public final class FakePds {
       ctx.addHeadersEndHandler(v -> ctx.response().headers().set("DPoP-Nonce", dpop.nonce()));
       ctx.next();
     });
-    router.get("/.well-known/oauth-protected-resource").handler(ctx -> Http.json(ctx, 200, protectedResource()));
+    router.get("/.well-known/oauth-protected-resource").handler(ctx -> {
+      String redirect = protectedResourceRedirect;
+      if (redirect != null) {
+        ctx.response().setStatusCode(302).putHeader("Location", redirect).end();
+      } else if (protectedResourceStatus != 200) {
+        Http.json(ctx, protectedResourceStatus, Map.of("error", "not_found"));
+      } else {
+        Http.json(ctx, 200, protectedResource());
+      }
+    });
     router.get("/.well-known/atproto-did").handler(ctx -> {
       io.vertx.core.net.HostAndPort a = ctx.request().authority();
       wellKnown(ctx, a == null ? "" : a.host());
@@ -125,11 +139,33 @@ public final class FakePds {
     authorizationServers = List.copyOf(servers);
   }
 
+  /** Replaces ({@code value}) or removes ({@code null}) a protected-resource metadata member (until clear()). */
+  public void overrideProtectedResource(String member, Object value) {
+    protectedResourceOverrides.put(member, Optional.ofNullable(value));
+  }
+
+  /** The protected-resource metadata answers this status (e.g. 404) instead of the document (until clear()). */
+  public void protectedResourceStatus(int status) {
+    protectedResourceStatus = status;
+  }
+
+  /** The protected-resource metadata answers 302 to {@code location} (until clear()). */
+  public void redirectProtectedResourceTo(String location) {
+    protectedResourceRedirect = location;
+  }
+
   public Map<String, Object> protectedResource() {
     Map<String, Object> md = new LinkedHashMap<>();
     md.put("resource", fake.pdsUrl().toString());
     List<String> servers = authorizationServers;
     md.put("authorization_servers", servers != null ? servers : List.of(fake.asUrl().toString()));
+    protectedResourceOverrides.forEach((member, value) -> {
+      if (value.isPresent()) {
+        md.put(member, value.get());
+      } else {
+        md.remove(member);
+      }
+    });
     md.put("scopes_supported", List.of());
     md.put("bearer_methods_supported", List.of("header"));
     md.put("resource_documentation", "https://atproto.com");
@@ -494,6 +530,9 @@ public final class FakePds {
 
   synchronized void clear() {
     authorizationServers = null;
+    protectedResourceOverrides.clear();
+    protectedResourceStatus = 200;
+    protectedResourceRedirect = null;
     records.clear();
     cids.clear();
     blobs.clear();

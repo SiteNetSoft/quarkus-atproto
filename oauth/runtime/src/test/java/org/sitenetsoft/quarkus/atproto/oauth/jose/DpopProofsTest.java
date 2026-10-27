@@ -50,6 +50,15 @@ class DpopProofsTest {
     }
 
     @Test
+    void htuIsNormalisedOrigin() {
+        String proof = DpopProofs.proof(KEY, "GET", URI.create("HTTPS://user:pw@PDS.Example:443/xrpc/A%20b?x=1"),
+                Optional.empty(), Optional.empty(), NOW);
+        assertEquals("https://pds.example/xrpc/A%20b", Jws.parseUnverified(proof)[1].get("htu"));
+        assertEquals("http://127.0.0.1:8080/x", DpopProofs.htu(URI.create("http://127.0.0.1:8080/x")));
+        assertEquals("http://pds.example/", DpopProofs.htu(URI.create("http://pds.example:80/")));
+    }
+
+    @Test
     void jtiUnique() {
         Set<Object> seen = new HashSet<>();
         for (int i = 0; i < 200; i++) {

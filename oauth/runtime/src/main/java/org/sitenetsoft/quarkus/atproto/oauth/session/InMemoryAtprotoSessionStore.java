@@ -52,6 +52,11 @@ public class InMemoryAtprotoSessionStore implements AtprotoSessionStore {
         return replaced[0];
     }
 
+    /** Every stored session (for the Dev UI; not part of the store SPI). */
+    public List<AtprotoSession> all() {
+        return List.copyOf(sessions.values());
+    }
+
     @Override
     public void delete(String id) {
         sessions.remove(id);

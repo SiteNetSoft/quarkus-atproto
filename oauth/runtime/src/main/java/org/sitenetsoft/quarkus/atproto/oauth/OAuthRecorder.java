@@ -22,7 +22,8 @@ public class OAuthRecorder {
         JWKS,
         LOGIN,
         CALLBACK,
-        LOGOUT
+        LOGOUT,
+        UNLINK
     }
 
     /** A route handler that looks up {@code beanClassName} lazily. */
@@ -32,7 +33,7 @@ public class OAuthRecorder {
 
     /**
      * A route at the path configured at runtime for {@code endpoint}: {@code GET} (metadata, JWKS, callback),
-     * {@code GET} and {@code POST} (login), {@code POST} (logout).
+     * {@code GET} and {@code POST} (login), {@code POST} (logout, unlink).
      */
     public Function<Router, Route> route(Endpoint endpoint) {
         return router -> {
@@ -44,6 +45,7 @@ public class OAuthRecorder {
                 case LOGIN -> config.loginPath();
                 case CALLBACK -> config.callbackPath();
                 case LOGOUT -> config.logoutPath();
+                case UNLINK -> config.unlinkPath();
             };
             String p = path.startsWith("/") ? path : "/" + path;
             return switch (endpoint) {
@@ -52,6 +54,9 @@ public class OAuthRecorder {
                         .handler(io.vertx.ext.web.handler.BodyHandler.create().setBodyLimit(8 * 1024)
                                 .setHandleFileUploads(false));
                 case LOGOUT -> router.route(HttpMethod.POST, p);
+                // the unlink form's body (did), small
+                case UNLINK -> router.route(HttpMethod.POST, p).handler(io.vertx.ext.web.handler.BodyHandler.create()
+                        .setBodyLimit(8 * 1024).setHandleFileUploads(false));
                 default -> router.route(HttpMethod.GET, p);
             };
         };

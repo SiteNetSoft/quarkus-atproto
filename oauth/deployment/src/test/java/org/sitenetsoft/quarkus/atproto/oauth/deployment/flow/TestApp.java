@@ -53,6 +53,13 @@ public class TestApp {
                 + identity.getAttribute("atproto.pds") + " " + new TreeSet<>(identity.getRoles());
     }
 
+    @GET
+    @Path("admin")
+    @jakarta.annotation.security.RolesAllowed("admin")
+    public String admin() {
+        return "admin";
+    }
+
     @POST
     @Path("publish")
     @Authenticated

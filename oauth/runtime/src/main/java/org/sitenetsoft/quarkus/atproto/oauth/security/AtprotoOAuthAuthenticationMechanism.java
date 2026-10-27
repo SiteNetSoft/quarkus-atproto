@@ -22,7 +22,8 @@ import io.vertx.ext.web.RoutingContext;
 /**
  * {@code login} mode: the session cookie → a {@code SecurityIdentity} (principal = DID). No cookie, a cookie that does
  * not open (tampered, other key) or a session that is gone or past its maximum age: no identity (anonymous), so public
- * pages keep working and protected ones answer 401. In {@code link} mode it never authenticates.
+ * pages keep working and protected ones answer 401. In {@code link} mode it neither authenticates nor challenges:
+ * the application's own mechanism does both.
  */
 @ApplicationScoped
 public class AtprotoOAuthAuthenticationMechanism implements HttpAuthenticationMechanism {
@@ -52,6 +53,9 @@ public class AtprotoOAuthAuthenticationMechanism implements HttpAuthenticationMe
 
     @Override
     public Uni<ChallengeData> getChallenge(RoutingContext context) {
+        if (config.mode() != OAuthConfig.Mode.LOGIN) {
+            return Uni.createFrom().nullItem(); // link mode: the application's own mechanism challenges
+        }
         return Uni.createFrom().item(new ChallengeData(401, null, null));
     }
 

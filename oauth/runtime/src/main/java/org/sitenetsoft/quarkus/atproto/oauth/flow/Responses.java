@@ -24,8 +24,8 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.ext.web.RoutingContext;
 
-/** Writing the login routes' answers, and reading their parameters. */
-final class Responses {
+/** Writing the login routes' answers, and reading their parameters (extension internal). */
+public final class Responses {
 
     private static final Logger LOG = Logger.getLogger("org.sitenetsoft.quarkus.atproto.oauth.flow");
     static final String NO_ACCOUNT = "No AT Protocol account found for this handle";
@@ -35,7 +35,7 @@ final class Responses {
     }
 
     /** Query parameters, plus the urlencoded form body of a POST (first value of each). */
-    static Uni<Map<String, String>> params(RoutingContext ctx) {
+    public static Uni<Map<String, String>> params(RoutingContext ctx) {
         Map<String, String> out = new HashMap<>();
         ctx.queryParams().forEach(e -> out.putIfAbsent(e.getKey(), e.getValue()));
         if (ctx.request().method() != HttpMethod.POST) {
@@ -61,7 +61,7 @@ final class Responses {
     }
 
     /** Runs {@code write} on the request's Vert.x context. */
-    static void on(Context context, Runnable write) {
+    public static void on(Context context, Runnable write) {
         if (Context.isOnEventLoopThread() && context == io.vertx.core.Vertx.currentContext()) {
             write.run();
         } else {
@@ -78,7 +78,7 @@ final class Responses {
     }
 
     /** A failed login step: the error page (when configured) or the status with the reason as text. */
-    static void fail(RoutingContext ctx, OAuthConfig config, String step, Throwable error) {
+    public static void fail(RoutingContext ctx, OAuthConfig config, String step, Throwable error) {
         LoginFailure f = classify(error);
         if (f.status() >= 500 && !(error instanceof LoginFailure)) {
             LOG.warnf("AT Protocol %s failed: %s (%s)", step, f.getMessage(), describe(error));

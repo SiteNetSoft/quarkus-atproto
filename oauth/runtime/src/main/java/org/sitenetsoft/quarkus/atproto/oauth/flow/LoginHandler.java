@@ -29,6 +29,7 @@ import org.sitenetsoft.quarkus.atproto.oauth.session.PendingAuthorization;
 import org.sitenetsoft.quarkus.atproto.oauth.session.SessionCookie;
 import org.sitenetsoft.quarkus.atproto.oauth.session.SessionStores;
 
+import io.quarkus.security.identity.IdentityProviderManager;
 import io.smallrye.mutiny.Uni;
 import io.vertx.core.Context;
 import io.vertx.core.Handler;
@@ -39,6 +40,9 @@ import io.vertx.ext.web.RoutingContext;
  * PKCE and {@code state}, a pushed authorization request (with the fallback scope once on {@code invalid_scope} when
  * configured), the pending entry (bound to this browser by a binding cookie, see {@link SessionCookie}), then 302 to
  * the authorization endpoint with {@code client_id} and {@code request_uri} only.
+ * <p>
+ * {@code link} mode: the request must carry the application's own signed-in identity (401 otherwise, before anything
+ * is sent anywhere); the pending entry records that user and the callback must be made by the same user.
  */
 @Singleton
 public class LoginHandler implements Handler<RoutingContext> {
@@ -52,15 +56,17 @@ public class LoginHandler implements Handler<RoutingContext> {
     private final ParClient par;
     private final SessionStores stores;
     private final SessionCookie cookie;
+    private final IdentityProviderManager identities;
 
     public LoginHandler(OAuthConfig config, ClientIdentity client, Discovery discovery, ParClient par,
-            SessionStores stores, SessionCookie cookie) {
+            SessionStores stores, SessionCookie cookie, IdentityProviderManager identities) {
         this.config = config;
         this.client = client;
         this.discovery = discovery;
         this.par = par;
         this.stores = stores;
         this.cookie = cookie;
+        this.identities = identities;
     }
 
     /** Where the login starts: the server, and the account when one was given. */
@@ -74,14 +80,23 @@ public class LoginHandler implements Handler<RoutingContext> {
     @Override
     public void handle(RoutingContext ctx) {
         Context context = ctx.vertx().getOrCreateContext();
-        // on the event loop, before any hop: the cookie goes out with the redirect
-        String binding = cookie.setBinding(ctx);
-        Responses.params(ctx).chain(params -> start(params, binding)).subscribe().with(
-                location -> Responses.on(context, () -> Responses.redirect(ctx, location)),
-                error -> Responses.on(context, () -> Responses.fail(ctx, config, "login", error)));
+        // the binding cookie goes out with the redirect only (not with a refusal)
+        String binding = cookie.newBinding();
+        Uni<Optional<String>> appPrincipal = config.mode() == OAuthConfig.Mode.LINK
+                ? AppIdentity.required(ctx, identities, "link an AT Protocol account").map(Optional::of)
+                : Uni.createFrom().item(Optional.empty());
+        // read the request (query, form body) before any hop to another thread
+        Uni<Map<String, String>> params = Responses.params(ctx);
+        appPrincipal.chain(principal -> params.chain(p -> start(p, SessionCookie.bindingHash(binding), principal)))
+                .subscribe().with(
+                        location -> Responses.on(context, () -> {
+                            cookie.addBinding(ctx, binding);
+                            Responses.redirect(ctx, location);
+                        }),
+                        error -> Responses.on(context, () -> Responses.fail(ctx, config, "login", error)));
     }
 
-    private Uni<String> start(Map<String, String> params, String browserBinding) {
+    private Uni<String> start(Map<String, String> params, String browserBinding, Optional<String> appPrincipal) {
         String input = params.getOrDefault("handle", "").strip();
         if (input.isEmpty()) {
             throw new LoginFailure(400, "invalid_request", "Enter your handle (for example alice.bsky.social)");
@@ -95,7 +110,7 @@ public class LoginHandler implements Handler<RoutingContext> {
                 PendingAuthorization pending = new PendingAuthorization(start.server().as().issuer(),
                         start.server().as().tokenEndpoint(), start.expectedDid(), start.handle(), verifier,
                         Jwk.ofPrivate(dpopKey.getPrivate(), dpopKey.getPublic()), pushed.scope(), target,
-                        browserBinding, Instant.now());
+                        browserBinding, Instant.now(), appPrincipal);
                 return stores.putPending(state, pending, config.pending().ttl())
                         .map(v -> authorizeUrl(start.server().as().authorizationEndpoint(), pushed.requestUri()));
             });

@@ -77,14 +77,17 @@ public class SessionCookie {
         return name + "-binding";
     }
 
-    /** Sets a fresh browser-binding cookie for a login starting now; returns the value's hash for the pending entry. */
-    public String setBinding(RoutingContext ctx) {
+    /** A fresh random browser-binding value, not sent yet ({@link #addBinding}); the pending entry keeps its hash. */
+    public String newBinding() {
         byte[] b = new byte[32];
         RANDOM.nextBytes(b);
-        String value = Base64.getUrlEncoder().withoutPadding().encodeToString(b);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
+    }
+
+    /** Sends the browser-binding cookie with {@code value}. */
+    public void addBinding(RoutingContext ctx, String value) {
         ctx.response().addCookie(Cookie.cookie(bindingName(), value).setPath(callbackPath()).setHttpOnly(true)
                 .setSecure(secure).setSameSite(CookieSameSite.LAX).setMaxAge(config.pending().ttl().toSeconds()));
-        return bindingHash(value);
     }
 
     /** Clears the browser-binding cookie. */
@@ -102,8 +105,8 @@ public class SessionCookie {
         return Optional.of(bindingHash(c.getValue()));
     }
 
-    /** base64url SHA-256 of a binding value. */
-    static String bindingHash(String value) {
+    /** base64url SHA-256 of a binding value (what the pending entry stores). */
+    public static String bindingHash(String value) {
         try {
             return Base64.getUrlEncoder().withoutPadding().encodeToString(
                     MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));

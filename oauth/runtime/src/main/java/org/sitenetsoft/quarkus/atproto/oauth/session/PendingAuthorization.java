@@ -24,10 +24,20 @@ import org.sitenetsoft.atproto.syntax.Handle;
  * @param browserBinding base64url SHA-256 of the binding cookie the login set in the browser that started it; the
  *        callback must present that cookie (login CSRF protection, RFC 9700 §4.7.1)
  * @param created when the login started
+ * @param appPrincipal ({@code link} mode) the application user who started the login; the callback must be made by
+ *        the same user, so an account cannot be linked to someone else
  */
 public record PendingAuthorization(String issuer, URI tokenEndpoint, Optional<Did> expectedDid,
         Optional<Handle> handle, String codeVerifier, Map<String, Object> dpopPrivateJwk, String scope, String target,
-        String browserBinding, Instant created) {
+        String browserBinding, Instant created, Optional<String> appPrincipal) {
+
+    /** A {@code login} mode entry (no application user). */
+    public PendingAuthorization(String issuer, URI tokenEndpoint, Optional<Did> expectedDid, Optional<Handle> handle,
+            String codeVerifier, Map<String, Object> dpopPrivateJwk, String scope, String target,
+            String browserBinding, Instant created) {
+        this(issuer, tokenEndpoint, expectedDid, handle, codeVerifier, dpopPrivateJwk, scope, target, browserBinding,
+                created, Optional.empty());
+    }
 
     public PendingAuthorization {
         Objects.requireNonNull(issuer, "issuer");
@@ -40,11 +50,13 @@ public record PendingAuthorization(String issuer, URI tokenEndpoint, Optional<Di
         Objects.requireNonNull(target, "target");
         Objects.requireNonNull(browserBinding, "browserBinding");
         Objects.requireNonNull(created, "created");
+        appPrincipal = appPrincipal == null ? Optional.empty() : appPrincipal;
     }
 
     @Override
     public String toString() {
         return "PendingAuthorization[issuer=" + issuer + ", expectedDid=" + expectedDid.map(Did::value).orElse("-")
-                + ", scope=" + scope + ", target=" + target + ", created=" + created + "]";
+                + ", scope=" + scope + ", target=" + target + ", created=" + created
+                + appPrincipal.map(p -> ", appPrincipal=" + p).orElse("") + "]";
     }
 }

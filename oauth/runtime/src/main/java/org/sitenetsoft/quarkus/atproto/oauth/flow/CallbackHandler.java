@@ -15,13 +15,15 @@ import org.sitenetsoft.multikey.Jwk;
 import org.sitenetsoft.quarkus.atproto.identity.AtprotoIdentity;
 import org.sitenetsoft.quarkus.atproto.oauth.OAuthConfig;
 import org.sitenetsoft.quarkus.atproto.oauth.events.AtprotoLoggedIn;
+import org.sitenetsoft.quarkus.atproto.oauth.link.AccountLinks;
+import org.sitenetsoft.quarkus.atproto.oauth.link.AtprotoAccountLinks;
 import org.sitenetsoft.quarkus.atproto.oauth.session.AtprotoSession;
 import org.sitenetsoft.quarkus.atproto.oauth.session.PendingAuthorization;
 import org.sitenetsoft.quarkus.atproto.oauth.session.SessionCookie;
 import org.sitenetsoft.quarkus.atproto.oauth.session.SessionStores;
 
+import io.quarkus.security.identity.IdentityProviderManager;
 import io.smallrye.mutiny.Uni;
-import io.smallrye.mutiny.infrastructure.Infrastructure;
 import io.vertx.core.Context;
 import io.vertx.core.Handler;
 import io.vertx.ext.web.RoutingContext;
@@ -40,6 +42,11 @@ import io.vertx.ext.web.RoutingContext;
  * login's target.</li>
  * </ol>
  * Every failure answers 401 (or the error page) with the reason and leaves no session.
+ * <p>
+ * {@code link} mode: the request must also carry the application's signed-in identity, and it must be the user who
+ * started the login (else 401 before the code is exchanged). The session is then stored and <b>linked</b> to that
+ * user ({@link AtprotoAccountLinks}); an earlier session of the same link is deleted. No cookie of this extension is
+ * set (only the binding cookie is cleared).
  */
 @Singleton
 public class CallbackHandler implements Handler<RoutingContext> {
@@ -53,9 +60,12 @@ public class CallbackHandler implements Handler<RoutingContext> {
     private final NonceStore nonces;
     private final SessionCookie cookie;
     private final Event<AtprotoLoggedIn> loggedIn;
+    private final AccountLinks links;
+    private final IdentityProviderManager identities;
 
     public CallbackHandler(OAuthConfig config, SessionStores stores, TokenClient tokens, PostTokenChecks checks,
-            NonceStore nonces, SessionCookie cookie, Event<AtprotoLoggedIn> loggedIn) {
+            NonceStore nonces, SessionCookie cookie, Event<AtprotoLoggedIn> loggedIn, AccountLinks links,
+            IdentityProviderManager identities) {
         this.config = config;
         this.stores = stores;
         this.tokens = tokens;
@@ -63,6 +73,8 @@ public class CallbackHandler implements Handler<RoutingContext> {
         this.nonces = nonces;
         this.cookie = cookie;
         this.loggedIn = loggedIn;
+        this.links = links;
+        this.identities = identities;
     }
 
     private record Done(AtprotoSession session, String target) {
@@ -71,14 +83,20 @@ public class CallbackHandler implements Handler<RoutingContext> {
     @Override
     public void handle(RoutingContext ctx) {
         Context context = ctx.vertx().getOrCreateContext();
-        Optional<String> previous = cookie.sessionId(ctx.request());
+        boolean link = config.mode() == OAuthConfig.Mode.LINK;
+        Optional<String> previous = link ? Optional.empty() : cookie.sessionId(ctx.request());
         AtomicBoolean bound = new AtomicBoolean();
+        Uni<Optional<String>> appPrincipal = link ? AppIdentity.principal(ctx, identities)
+                : Uni.createFrom().item(Optional.empty());
         // the previous session is deleted only after a fully successful login
-        complete(ctx, bound).chain(done -> previous.map(id -> stores.sessions().delete(id))
-                .orElse(Uni.createFrom().voidItem()).map(v -> done))
+        complete(ctx, bound, appPrincipal)
+                .chain(done -> previous.map(id -> stores.sessions().delete(id))
+                        .orElse(Uni.createFrom().voidItem()).map(v -> done))
                 .subscribe().with(done -> Responses.on(context, () -> {
                     cookie.clearBinding(ctx);
-                    cookie.set(ctx, done.session().id());
+                    if (!link) {
+                        cookie.set(ctx, done.session().id());
+                    }
                     Responses.redirect(ctx, done.target());
                 }), error -> Responses.on(context, () -> {
                     if (bound.get()) {
@@ -88,7 +106,7 @@ public class CallbackHandler implements Handler<RoutingContext> {
                 }));
     }
 
-    private Uni<Done> complete(RoutingContext ctx, AtomicBoolean bound) {
+    private Uni<Done> complete(RoutingContext ctx, AtomicBoolean bound, Uni<Optional<String>> appPrincipalUni) {
         // read on the event loop, before any hop to another thread
         String state = ctx.queryParams().get("state");
         String error = ctx.queryParams().get("error");
@@ -103,7 +121,7 @@ public class CallbackHandler implements Handler<RoutingContext> {
             return Uni.createFrom().failure(new LoginFailure(401, "invalid_state",
                     "This sign-in was not started in this browser: please sign in again"));
         }
-        return stores.takePending(state, binding.get()).chain(found -> {
+        return appPrincipalUni.chain(appPrincipal -> stores.takePending(state, binding.get()).chain(found -> {
             PendingAuthorization pending = found.orElseThrow(() -> new LoginFailure(401, "invalid_state",
                     "Unknown, used or expired login state, or a sign-in started in another browser: please sign in "
                             + "again"));
@@ -112,6 +130,15 @@ public class CallbackHandler implements Handler<RoutingContext> {
                 throw new LoginFailure(401, "invalid_state", "This sign-in was not started in this browser");
             }
             bound.set(true);
+            // link mode: the user who started the login completes it (before anything is exchanged)
+            if (pending.appPrincipal().isPresent() && !pending.appPrincipal().equals(appPrincipal)) {
+                throw new LoginFailure(401, "unauthenticated", appPrincipal.isEmpty()
+                        ? "Sign in to the application to finish linking the account"
+                        : "This account link was started by another application user");
+            }
+            if (pending.appPrincipal().isEmpty() && config.mode() == OAuthConfig.Mode.LINK) {
+                throw new LoginFailure(401, "invalid_state", "This sign-in was not started as an account link");
+            }
             if (iss == null || !iss.equals(pending.issuer())) {
                 throw new LoginFailure(401, "issuer_mismatch", "The callback's iss "
                         + (iss == null ? "is missing" : "'" + AuthServerClient.abbreviate(iss) + "'")
@@ -131,7 +158,7 @@ public class CallbackHandler implements Handler<RoutingContext> {
                     .chain(t -> checks.check(t, pending.issuer(), pending.expectedDid())
                             .chain(identity -> store(pending, t, identity)))
                     .map(session -> new Done(session, pending.target()));
-        });
+        }));
     }
 
     private Uni<AtprotoSession> store(PendingAuthorization pending, TokenResponse t, AtprotoIdentity identity) {
@@ -142,21 +169,23 @@ public class CallbackHandler implements Handler<RoutingContext> {
                 pending.issuer(), t.scope().orElseThrow(), t.accessToken(), t.refreshToken(),
                 now.plusSeconds(t.expiresIn()), pending.dpopPrivateJwk(),
                 nonces.snapshot(URI.create(pending.issuer()), identity.pds()), now);
-        return stores.sessions().save(session).chain(v -> fireLoggedIn(session)).map(v -> {
-            LOG.debugf("AT Protocol login: %s", session);
-            return session;
-        });
+        Optional<String> principal = pending.appPrincipal();
+        return stores.sessions().save(session)
+                .chain(v -> principal.map(p -> link(p, session)).orElse(Uni.createFrom().voidItem()))
+                // observers may block (worker thread); an observer's failure does not undo the login
+                .chain(v -> EventFiring.fire(loggedIn, new AtprotoLoggedIn(session.did(), session.handle(), principal)))
+                .map(v -> {
+                    LOG.debugf("AT Protocol %s: %s%s", principal.isPresent() ? "account link" : "login", session,
+                            principal.map(p -> " for application user " + p).orElse(""));
+                    return session;
+                });
     }
 
-    /** Observers may block: fired on a worker thread; an observer's failure does not undo the login. */
-    private Uni<Void> fireLoggedIn(AtprotoSession session) {
-        return Uni.createFrom().item(() -> {
-            try {
-                loggedIn.fire(new AtprotoLoggedIn(session.did(), session.handle(), Optional.empty()));
-            } catch (RuntimeException e) {
-                LOG.warnf("An AtprotoLoggedIn observer failed for %s: %s", session.did(), e.toString());
-            }
-            return (Void) null;
-        }).runSubscriptionOn(Infrastructure.getDefaultWorkerPool());
+    /** Links the new session to the application user; the link's earlier session (if any) is deleted. */
+    private Uni<Void> link(String appPrincipal, AtprotoSession session) {
+        return links.links().sessionFor(appPrincipal, session.did())
+                .chain(earlier -> links.links().link(appPrincipal, session.did(), session.id())
+                        .chain(v -> earlier.filter(id -> !id.equals(session.id()))
+                                .map(id -> stores.sessions().delete(id)).orElse(Uni.createFrom().voidItem())));
     }
 }

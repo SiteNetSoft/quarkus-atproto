@@ -62,7 +62,13 @@ List<ValidationProblem> problems = validator.validate(Nsid.parse("site.standard.
 List<ValidationProblem> problems2 = validator.validate(collection, documentRecord);   // generated type
 validator.validate(collection, record, ValidationMode.TRUE);                         // per-call mode
 // ValidationProblem(path = "/title", message = "is 501 graphemes long, at most 500 graphemes allowed (maxGraphemes)")
+validator.validateKey(collection, RecordKey.parse("my-first-post"));                 // the record key
+// ValidationProblem(path = "rkey", message = "the record key \"my-first-post\" is not a TID (... key type tid)")
 ```
+
+`validateKey` checks a record key against the collection's record `key` type (`tid`, `nsid`, `literal:<value>`,
+`any`); an unknown Lexicon is skipped in `optimistic` mode. The records API (`quarkus-atproto-xrpc`) runs it on every
+caller-chosen key before sending.
 
 `LexiconRegistry` holds every Lexicon on the classpath: the `META-INF/atproto/lexicons/**.json` of the application
 and its dependencies plus your `src/main/lexicons`, found **at build time** (no runtime classpath scanning; the files
@@ -103,6 +109,7 @@ it directly.
 
 Lexicon JSON is registered as native-image resources. Every class named in a `META-INF/atproto/lexicons/index.json`
 (the packs) is registered for reflection with its nested classes, so Jackson can read and write the generated records
-and unions. For the application's own `src/main/lexicons` the code generator also writes `AtprotoLexiconReflection`
-(in the package of the first generated type), annotated `@RegisterForReflection(ignoreNested = false, targets = ...)`
+and unions. For the application's own `src/main/lexicons` the code generator also writes
+`AtprotoLexiconReflection_<hash>` (in the package of the first generated type; the suffix is a short hash of the
+module's `groupId:artifactId`, so two modules generating into one package do not collide), annotated `@RegisterForReflection(ignoreNested = false, targets = ...)`
 with every generated class, so they are registered as well. Nothing to do by hand.

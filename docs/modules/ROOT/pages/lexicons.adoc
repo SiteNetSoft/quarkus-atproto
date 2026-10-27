@@ -60,7 +60,12 @@ dependencies' `index.json`. The files are also registered for validation.
 
 List<ValidationProblem> problems = validator.validate(Nsid.parse("site.standard.document"), record);
 // ValidationProblem(path = "/title", message = "is 501 graphemes long, at most 500 graphemes allowed (maxGraphemes)")
+List<ValidationProblem> keyProblems = validator.validateKey(Nsid.parse("site.standard.document"),
+        RecordKey.parse("my-first-post"));   // path "rkey": the collection's key type is tid
 ----
+
+`validateKey` checks a record key against the collection's record `key` type (`tid`, `nsid`, `literal:<value>`,
+`any`); the records API runs it on every key the caller chooses, before sending.
 
 Checked: `$type` equals the collection, required properties, nullability, types, `minLength`/`maxLength` in UTF-8
 bytes, `minGraphemes`/`maxGraphemes` in extended grapheme clusters, `enum`, `const`, string formats, integer bounds,
@@ -79,5 +84,6 @@ array sizes, blob `accept` and `maxSize`, closed and open unions, refs across fi
 
 The Lexicon JSON is registered as native-image resources, and every class listed in an `index.json` (the packs) is
 registered for reflection with its nested types. Types generated from your own `src/main/lexicons` are registered too:
-the code generator writes an `AtprotoLexiconReflection` class next to them, annotated
+the code generator writes an `AtprotoLexiconReflection_<hash>` class next to them (the suffix is a short hash of the
+module's `groupId:artifactId`, so two modules generating into one package do not collide), annotated
 `@RegisterForReflection(ignoreNested = false, targets = ...)` with every generated class. Nothing to do by hand.

@@ -102,7 +102,7 @@ class AppLexiconReflectionTest {
         assertTrue(generated.contains("org.example.Note"), generated.toString());
         assertTrue(generated.stream().anyMatch(n -> n.startsWith("org.example.Note$")), generated.toString());
         for (String name : generated) {
-            if (!name.endsWith(AtprotoLexiconCodeGen.REFLECTION_HOLDER)) {
+            if (!name.contains(AtprotoLexiconCodeGen.REFLECTION_HOLDER)) {
                 assertTrue(registered.contains(name), name + " not registered: " + registered);
             }
         }

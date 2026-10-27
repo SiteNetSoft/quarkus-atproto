@@ -131,7 +131,7 @@ public class AtprotoLexiconCodeGen implements CodeGenProvider {
             List<Path> written = new ArrayList<>(
                     Generator.generate(set, selected, dependencyIndex, context.outDir(), prefix));
             if (!written.isEmpty()) {
-                written.add(writeReflectionHolder(written, context.outDir()));
+                written.add(writeReflectionHolder(written, context.outDir(), reflectionHolderName(context)));
             }
             LOG.debugf("atproto-lexicon: generated %d Java files for %s into %s", written.size(), selected,
                     context.outDir());
@@ -141,16 +141,50 @@ public class AtprotoLexiconCodeGen implements CodeGenProvider {
         }
     }
 
-    /** Simple name of the generated class that registers the application's Lexicon types for reflection. */
+    /**
+     * Prefix of the simple name of the generated class that registers the application's Lexicon types for
+     * reflection; {@link #reflectionHolderName} adds a suffix unique to the generating module.
+     */
     static final String REFLECTION_HOLDER = "AtprotoLexiconReflection";
 
     /**
-     * Writes {@value #REFLECTION_HOLDER}, annotated {@code @RegisterForReflection(targets = ...)} with every top-level
+     * {@value #REFLECTION_HOLDER}{@code _<8 hex>}: the suffix is a short hash of the module's Maven coordinates
+     * ({@code groupId:artifactId}), or of its Lexicon directory when they are unknown, so two modules generating into
+     * the same package do not collide, and the name is stable across builds and machines.
+     */
+    static String reflectionHolderName(CodeGenContext context) {
+        String key = null;
+        try {
+            var app = context.applicationModel() == null ? null : context.applicationModel().getAppArtifact();
+            if (app != null && app.getArtifactId() != null && !app.getArtifactId().isEmpty()) {
+                key = app.getGroupId() + ":" + app.getArtifactId();
+            }
+        } catch (RuntimeException e) {
+            // no application model: fall back to the input directory
+        }
+        if (key == null) {
+            key = context.inputDir() == null ? "" : context.inputDir().toAbsolutePath().normalize().toString();
+        }
+        return reflectionHolderName(key);
+    }
+
+    static String reflectionHolderName(String moduleKey) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(moduleKey.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return REFLECTION_HOLDER + "_" + java.util.HexFormat.of().formatHex(digest, 0, 4);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Writes the holder {@code holder}, annotated {@code @RegisterForReflection(targets = ...)} with every top-level
      * class just generated (records, defs, XRPC types and clients; nested classes included, {@code ignoreNested =
      * false}), into the package of the first one: native images need reflection for Jackson to read and write them.
      * Packs get the same through their {@code index.json} instead.
      */
-    static Path writeReflectionHolder(List<Path> generated, Path outDir) {
+    static Path writeReflectionHolder(List<Path> generated, Path outDir, String holder) {
         List<String> topLevel = generated.stream()
                 .map(f -> outDir.toAbsolutePath().relativize(f.toAbsolutePath()).toString().replace('\\', '/'))
                 .filter(f -> f.endsWith(".java"))
@@ -168,9 +202,9 @@ public class AtprotoLexiconCodeGen implements CodeGenProvider {
             src.append("    ").append(topLevel.get(i)).append(".class").append(i + 1 < topLevel.size() ? "," : "")
                     .append('\n');
         }
-        src.append("})\nfinal class ").append(REFLECTION_HOLDER).append(" {\n    private ").append(REFLECTION_HOLDER)
+        src.append("})\nfinal class ").append(holder).append(" {\n    private ").append(holder)
                 .append("() {\n    }\n}\n");
-        Path file = (pkg.isEmpty() ? outDir : outDir.resolve(pkg.replace('.', '/'))).resolve(REFLECTION_HOLDER + ".java");
+        Path file = (pkg.isEmpty() ? outDir : outDir.resolve(pkg.replace('.', '/'))).resolve(holder + ".java");
         try {
             Files.createDirectories(file.getParent());
             Files.writeString(file, src);

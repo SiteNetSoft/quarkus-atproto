@@ -22,6 +22,7 @@ import org.sitenetsoft.atproto.syntax.Handle;
 import org.sitenetsoft.atproto.syntax.Language;
 import org.sitenetsoft.atproto.syntax.Nsid;
 import org.sitenetsoft.atproto.syntax.RecordKey;
+import org.sitenetsoft.atproto.syntax.RecordKeyType;
 import org.sitenetsoft.atproto.syntax.Tid;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -96,7 +97,7 @@ public class LexiconValidator {
     Optional<JsonNode> main = registry.def(collection, "main");
     if (main.isEmpty()) {
       if (mode == ValidationMode.TRUE) {
-        run.problem("/", "no Lexicon for collection " + collection + " on the classpath (validation mode true)");
+        run.problem("/", noLexicon(collection));
       }
       return run.problems;
     }
@@ -117,6 +118,62 @@ public class LexiconValidator {
     }
     run.object(main.get().path("record"), record, "/", collection);
     return List.copyOf(run.problems);
+  }
+
+  private static String noLexicon(Nsid collection) {
+    return "no Lexicon for collection " + collection + " on the classpath (validation mode true)";
+  }
+
+  /** Checks a record key against the collection's Lexicon in the configured mode. */
+  public List<ValidationProblem> validateKey(Nsid collection, RecordKey rkey) {
+    return validateKey(collection, rkey, mode);
+  }
+
+  /**
+   * Checks a record key against the collection's record {@code key} type ({@code tid}, {@code nsid},
+   * {@code literal:<value>}, {@code any}): a slug key for a {@code tid} collection is refused. Problems have the path
+   * {@value ValidationProblem#RKEY}. An unknown Lexicon is skipped in {@link ValidationMode#OPTIMISTIC} mode and a
+   * problem (at {@code /}, as {@link #validate} reports it) in {@link ValidationMode#TRUE} mode; a record Lexicon
+   * without a {@code key} accepts any key.
+   *
+   * @return the problems found, empty when the key is acceptable (or was not checked in this mode)
+   */
+  public List<ValidationProblem> validateKey(Nsid collection, RecordKey rkey, ValidationMode mode) {
+    Objects.requireNonNull(collection, "collection");
+    Objects.requireNonNull(rkey, "rkey");
+    Objects.requireNonNull(mode, "mode");
+    if (mode == ValidationMode.FALSE) {
+      return List.of();
+    }
+    Optional<JsonNode> main = registry.def(collection, "main");
+    if (main.isEmpty()) {
+      return mode == ValidationMode.TRUE ? List.of(new ValidationProblem("/", noLexicon(collection))) : List.of();
+    }
+    JsonNode key = main.get().path("key");
+    if (!"record".equals(main.get().path("type").asText()) || !key.isTextual()) {
+      return List.of(); // not a record Lexicon (validate says so), or no key type declared
+    }
+    RecordKeyType type;
+    try {
+      type = RecordKeyType.parse(key.asText());
+    } catch (org.sitenetsoft.atproto.syntax.SyntaxException e) {
+      return List.of(new ValidationProblem(ValidationProblem.RKEY, "the Lexicon of " + collection
+          + " declares an invalid record key type " + quote(key.asText())));
+    }
+    if (type.accepts(rkey)) {
+      return List.of();
+    }
+    return List.of(new ValidationProblem(ValidationProblem.RKEY, "the record key " + quote(rkey.value())
+        + " is not a " + describe(type) + " (" + collection + " records use key type " + type + ")"));
+  }
+
+  private static String describe(RecordKeyType type) {
+    return switch (type.kind()) {
+      case TID -> "TID";
+      case NSID -> "NSID";
+      case LITERAL -> "\"" + type.literalValue() + "\"";
+      case ANY -> "record key";
+    };
   }
 
   /** {@code nsid#main} and {@code nsid} name the same def. */
@@ -487,7 +544,7 @@ public class LexiconValidator {
   static boolean formatValid(String format, String s) {
     return switch (format) {
       case "at-identifier" -> Did.isValid(s) || Handle.isValidSyntax(s);
-      case "at-uri" -> AtUri.isValid(s);
+      case "at-uri" -> AtUri.isValidSyntax(s);
       case "cid" -> Cid.isValid(s);
       case "datetime" -> Datetime.isValid(s);
       case "did" -> Did.isValid(s);

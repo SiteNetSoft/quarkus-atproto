@@ -84,6 +84,21 @@ class ValidatorTest {
     }
 
     @Test
+    void recordKeyCheckedAgainstKeyType() {
+        org.sitenetsoft.atproto.syntax.RecordKey slug = org.sitenetsoft.atproto.syntax.RecordKey.parse("my-first-post");
+        List<ValidationProblem> problems = validator.validateKey(DOCUMENT, slug);
+        assertEquals(1, problems.size(), problems.toString());
+        assertProblemAt(problems, ValidationProblem.RKEY, "tid");
+        assertTrue(validator.validateKey(DOCUMENT, org.sitenetsoft.atproto.syntax.RecordKey.parse(
+                org.sitenetsoft.atproto.syntax.Tid.next().value())).isEmpty());
+        assertTrue(validator.validateKey(DOCUMENT, slug, ValidationMode.FALSE).isEmpty());
+        // an unknown Lexicon: skipped when optimistic, a problem when true
+        Nsid unknown = Nsid.parse("org.example.unknown");
+        assertTrue(validator.validateKey(unknown, slug, ValidationMode.OPTIMISTIC).isEmpty());
+        assertProblemAt(validator.validateKey(unknown, slug, ValidationMode.TRUE), "/", "no Lexicon");
+    }
+
+    @Test
     void validDocumentPasses() throws Exception {
         for (String name : RECORDS) {
             if (name.equals(INVALID_IN_THE_WILD)) {

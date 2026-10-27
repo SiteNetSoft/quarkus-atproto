@@ -13,12 +13,13 @@
 - Validate before writing: `@Inject LexiconValidator v; v.validate(Nsid collection, JsonNode|Object record)` →
   `List<ValidationProblem(path, message)>` (JSON Pointer paths like `/title`); empty = valid. Overload with
   `ValidationMode` for one call. Mode config `quarkus.atproto.lexicon.validation` = `optimistic` (default: unknown
-  collections pass) | `true` (unknown collections fail) | `false` (skip).
+  collections pass) | `true` (unknown collections fail) | `false` (skip). Record keys:
+  `v.validateKey(collection, rkey)` against the Lexicon's `key` type (problem path `rkey`); the records API calls it.
 - Lengths: `maxLength` is UTF-8 bytes, `maxGraphemes` is grapheme clusters (`Graphemes.count`, `Graphemes.utf8Length`).
   `👩‍💻` = 1 grapheme but 11 bytes, so 500 of them break a 5000-byte `maxLength`.
 - Open unions accept unknown `$type`s; closed ones don't. The record's own `$type` must equal the collection.
 - `LexiconRegistry` (`knows`, `def`, `document`, `nsids`) is filled at build time; adding Lexicon JSON at run time is
   not supported. The managed `ObjectMapper` has `AtprotoSyntaxModule` registered.
 - Native: pack classes (every `index.json` entry and its nested classes) and the types generated from
-  `src/main/lexicons` (through the generated `AtprotoLexiconReflection` holder) are registered for reflection
+  `src/main/lexicons` (through the generated `AtprotoLexiconReflection_<hash>` holder, one per module) are registered for reflection
   automatically; don't add `@RegisterForReflection` for them.

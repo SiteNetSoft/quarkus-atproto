@@ -77,11 +77,68 @@ class AppCodegenTest {
         assertEquals("site.standard.Document", noteClass.getMethod("about").getReturnType().getName());
 
         // native: the generated types are registered for reflection by a generated holder class
-        Class<?> holder = loader.loadClass("org.example." + AtprotoLexiconCodeGen.REFLECTION_HOLDER);
+        String holderName = AtprotoLexiconCodeGen.reflectionHolderName("org.example:app");
+        assertTrue(holderName.matches(AtprotoLexiconCodeGen.REFLECTION_HOLDER + "_[0-9a-f]{8}"), holderName);
+        Class<?> holder = loader.loadClass("org.example." + holderName);
         io.quarkus.runtime.annotations.RegisterForReflection r = holder
                 .getAnnotation(io.quarkus.runtime.annotations.RegisterForReflection.class);
         assertTrue(r != null && !r.ignoreNested(), "holder not annotated: " + holder);
         assertTrue(java.util.Arrays.asList(r.targets()).contains(noteClass), java.util.Arrays.toString(r.targets()));
+    }
+
+    @Test
+    void handleFieldWithDisallowedTldRoundTrips() throws Exception {
+        // the validator accepts any syntactically valid handle (format: handle); the generated type must read it back
+        Path in = tmp.resolve("lexicons");
+        Path lex = in.resolve("org/example/profile.json");
+        Files.createDirectories(lex.getParent());
+        Files.writeString(lex, """
+                {"lexicon": 1, "id": "org.example.profile", "defs": {"main": {"type": "record", "key": "literal:self",
+                  "record": {"type": "object", "required": ["handle"], "properties": {
+                    "handle": {"type": "string", "format": "handle"},
+                    "post": {"type": "string", "format": "at-uri"}}}}}}
+                """);
+        Path out = tmp.resolve("out");
+        new AtprotoLexiconCodeGen().trigger(context(in, out, Map.of(), packs()));
+        Class<?> profile = compile(list(out)).loadClass("org.example.Profile");
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper()
+                .registerModule(new org.sitenetsoft.atproto.syntax.AtprotoSyntaxModule());
+        String json = "{\"$type\":\"org.example.profile\",\"handle\":\"alice.local\","
+                + "\"post\":\"at://alice.local/app.bsky.feed.post/3kabcdefghij2\"}";
+        Object read = mapper.readValue(json, profile);
+        assertEquals("alice.local", profile.getMethod("handle").invoke(read).toString());
+        assertEquals(mapper.readTree(json), mapper.readTree(mapper.writeValueAsString(read)));
+    }
+
+    @Test
+    void reflectionHolderNameUniquePerModule() throws Exception {
+        // two modules generating into the same package must not both write org.example.AtprotoLexiconReflection
+        Path in = appLexicons();
+        Path outA = tmp.resolve("outA");
+        new AtprotoLexiconCodeGen().trigger(context(in, outA, Map.of(), packs()));
+        Path outB = tmp.resolve("outB");
+        Files.createDirectories(outB);
+        new AtprotoLexiconCodeGen().trigger(new CodeGenContext(new ApplicationModelBuilder()
+                .setAppArtifact(ResolvedDependencyBuilder.newInstance().setGroupId("org.example")
+                        .setArtifactId("other-module").setVersion("1.0")
+                        .setResolvedPath(Files.createDirectories(tmp.resolve("other-classes"))))
+                .addDependencies(packs()).build(), outB, tmp.resolve("work"), in, false,
+                new SmallRyeConfigBuilder().build(), false));
+        List<String> a = holders(outA);
+        List<String> b = holders(outB);
+        assertEquals(1, a.size(), a::toString);
+        assertEquals(1, b.size(), b::toString);
+        assertTrue(!a.get(0).equals(b.get(0)), a + " " + b);
+        assertEquals(AtprotoLexiconCodeGen.reflectionHolderName("org.example:app") + ".java", a.get(0));
+        assertEquals(AtprotoLexiconCodeGen.reflectionHolderName("org.example:other-module") + ".java", b.get(0));
+        // stable: the same module gets the same name on every build
+        assertEquals(AtprotoLexiconCodeGen.reflectionHolderName("org.example:app"),
+                AtprotoLexiconCodeGen.reflectionHolderName("org.example:app"));
+    }
+
+    static List<String> holders(Path out) throws IOException {
+        return list(out).stream().map(p -> p.getFileName().toString())
+                .filter(n -> n.startsWith(AtprotoLexiconCodeGen.REFLECTION_HOLDER)).toList();
     }
 
     @Test

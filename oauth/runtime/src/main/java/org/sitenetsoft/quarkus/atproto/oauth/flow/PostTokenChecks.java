@@ -39,21 +39,35 @@ public class PostTokenChecks {
     public Uni<AtprotoIdentity> check(TokenResponse tokens, String issuer, Optional<Did> expectedDid) {
         return Uni.createFrom().deferred(() -> {
             Did sub = checkTokenClaims(tokens, expectedDid);
-            return identities.resolveDid(sub)
-                    .onFailure().transform(e -> refused("sub " + sub + " could not be resolved to its PDS ("
-                            + e.getClass().getSimpleName() + ")", e))
-                    .chain(identity -> discovery.authorizationServerOf(identity.pds())
-                            .onFailure().transform(e -> refused("the authorization server of " + sub + "'s PDS "
-                                    + identity.pds() + " could not be checked (" + e.getMessage() + ")", e))
-                            .map(as -> {
-                                if (!as.issuer().equals(issuer)) {
-                                    throw refused("issuer mismatch: " + sub + "'s PDS " + identity.pds()
-                                            + " is protected by " + as.issuer() + ", but the token was issued by "
-                                            + issuer, null);
-                                }
-                                return identity;
-                            }));
+            return authority(sub, issuer).onFailure(e -> !(e instanceof IssuerMismatch)).transform(e -> refused(
+                    "the authorization server of " + sub + "'s PDS could not be checked (" + e.getMessage() + ")", e))
+                    .onFailure(IssuerMismatch.class).transform(e -> refused(e.getMessage(), null));
         });
+    }
+
+    /**
+     * Check 4 on its own (it does not depend on a token response): {@code did} → DID document → PDS → its
+     * authorization server, whose issuer must be {@code issuer}. The account, with its current PDS and handle.
+     * Failures are passed through unchanged (identity, DID and discovery exceptions), except a different issuer:
+     * {@link IssuerMismatch}.
+     */
+    public Uni<AtprotoIdentity> authority(Did did, String issuer) {
+        return identities.resolveDid(did).chain(identity -> discovery.authorizationServerOf(identity.pds()).map(as -> {
+            if (!as.issuer().equals(issuer)) {
+                throw new IssuerMismatch("issuer mismatch: " + did + "'s PDS " + identity.pds() + " is protected by "
+                        + as.issuer() + ", but the tokens are issued by " + issuer);
+            }
+            return identity;
+        }));
+    }
+
+    /** The account's PDS is protected by another authorization server than the one that issues its tokens. */
+    public static final class IssuerMismatch extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+
+        IssuerMismatch(String message) {
+            super(message);
+        }
     }
 
     /** Checks 1 to 3; the DID. */

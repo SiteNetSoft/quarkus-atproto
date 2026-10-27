@@ -13,6 +13,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.sitenetsoft.quarkus.atproto.oauth.AtprotoSessionExpired;
+import org.sitenetsoft.quarkus.atproto.oauth.AtprotoTemporarilyUnavailable;
 import org.sitenetsoft.quarkus.atproto.oauth.session.AtprotoSession;
 import org.sitenetsoft.quarkus.atproto.oauth.session.AtprotoSessionStore;
 import org.sitenetsoft.quarkus.atproto.oauth.session.Refresher;
@@ -21,7 +22,11 @@ import org.sitenetsoft.quarkus.atproto.test.FakeAtproto;
 
 import io.quarkus.test.QuarkusUnitTest;
 
-/** A refresh re-runs the post-token checks: sub present and the same, the issuer still the PDS's authority. */
+/**
+ * A refresh re-runs the post-token checks: the issuer must still be the authority for the account's current PDS
+ * (checked before the refresh token is spent; a transient failure keeps the session), and the response's sub must be
+ * present and the session's DID.
+ */
 public class RefreshChecksTest {
 
     static final String HANDLE = "alice.example.test";
@@ -56,8 +61,43 @@ public class RefreshChecksTest {
         return sessions.findByDid(ALICE.did()).get(0);
     }
 
-    private void refresh(AtprotoSession s) {
-        refresher.refresh(s.id(), s.accessToken()).await().atMost(Duration.ofSeconds(20));
+    private AtprotoSession refresh(AtprotoSession s) {
+        return refresher.refresh(s.id(), s.accessToken()).await().atMost(Duration.ofSeconds(20));
+    }
+
+    @Test
+    void transientDidErrorKeepsTheSession() {
+        AtprotoSession s = loggedIn();
+        FAKE.plc().unavailable(true);
+        assertThrows(AtprotoTemporarilyUnavailable.class, () -> refresh(s));
+        assertEquals(0, FAKE.as().refreshCount(), "the refresh token must not be spent");
+        AtprotoSession kept = sessions.find(s.id()).orElseThrow();
+        assertEquals(s.refreshToken(), kept.refreshToken());
+        assertEquals(s.accessToken(), kept.accessToken());
+        // after the outage the same session refreshes
+        FAKE.plc().unavailable(false);
+        AtprotoSession refreshed = refresh(s);
+        assertEquals(1, FAKE.as().refreshCount());
+        assertTrue(!refreshed.refreshToken().equals(s.refreshToken()));
+        assertEquals(refreshed.refreshToken(), sessions.find(s.id()).orElseThrow().refreshToken());
+    }
+
+    @Test
+    void transientMetadataErrorKeepsTheSession() {
+        AtprotoSession s = loggedIn();
+        FAKE.pds().protectedResourceStatus(503);
+        assertThrows(AtprotoTemporarilyUnavailable.class, () -> refresh(s));
+        assertEquals(0, FAKE.as().refreshCount());
+        assertEquals(s.refreshToken(), sessions.find(s.id()).orElseThrow().refreshToken());
+    }
+
+    @Test
+    void deactivatedDidEndsTheSessionWithoutSpending() {
+        AtprotoSession s = loggedIn();
+        FAKE.plc().tombstone(ALICE.did());
+        assertThrows(AtprotoSessionExpired.class, () -> refresh(s));
+        assertEquals(0, FAKE.as().refreshCount());
+        assertTrue(sessions.find(s.id()).isEmpty());
     }
 
     @Test
@@ -76,6 +116,7 @@ public class RefreshChecksTest {
         FAKE.pds().authorizationServers(List.of(OTHER.asUrl().toString()));
         AtprotoSessionExpired e = assertThrows(AtprotoSessionExpired.class, () -> refresh(s));
         assertTrue(e.getMessage().contains("issuer"), e.getMessage());
+        assertEquals(0, FAKE.as().refreshCount(), "detected before the refresh token is spent");
         assertTrue(sessions.find(s.id()).isEmpty(), "nothing stored, the session ends");
     }
 

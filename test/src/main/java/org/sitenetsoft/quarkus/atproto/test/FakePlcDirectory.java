@@ -27,6 +27,7 @@ public final class FakePlcDirectory {
   private final List<Recorded> requests = new CopyOnWriteArrayList<>();
   private final Set<String> tombstones = ConcurrentHashMap.newKeySet();
   private final Map<String, URI> movedPds = new ConcurrentHashMap<>();
+  private volatile boolean unavailable;
 
   FakePlcDirectory(FakeAtproto fake) {
     this.fake = fake;
@@ -40,6 +41,10 @@ public final class FakePlcDirectory {
 
   private void document(RoutingContext ctx) {
     String did = ctx.pathParam("did");
+    if (unavailable) {
+      Http.json(ctx, 503, Map.of("message", "Service Unavailable"));
+      return;
+    }
     if (tombstones.contains(did)) {
       Http.json(ctx, 410, Map.of("message", "DID not available: " + did));
       return;
@@ -81,6 +86,11 @@ public final class FakePlcDirectory {
     movedPds.put(did.value(), pds);
   }
 
+  /** While {@code true} every document request answers {@code 503} (an outage; until {@link FakeAtproto#clear()}). */
+  public void unavailable(boolean value) {
+    unavailable = value;
+  }
+
   /** From now on {@code did} answers {@code 410 Gone}. */
   public void tombstone(Did did) {
     tombstones.add(did.value());
@@ -93,6 +103,7 @@ public final class FakePlcDirectory {
   void clear() {
     tombstones.clear();
     movedPds.clear();
+    unavailable = false;
     requests.clear();
   }
 }

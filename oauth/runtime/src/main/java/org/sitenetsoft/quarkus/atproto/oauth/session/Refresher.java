@@ -11,7 +11,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 
 import org.jboss.logging.Logger;
+import org.sitenetsoft.quarkus.atproto.identity.AtprotoIdentity;
 import org.sitenetsoft.quarkus.atproto.oauth.AtprotoSessionExpired;
+import org.sitenetsoft.quarkus.atproto.oauth.AtprotoTemporarilyUnavailable;
+import org.sitenetsoft.quarkus.did.DidDeactivated;
+import org.sitenetsoft.quarkus.did.DidNotFound;
 import org.sitenetsoft.quarkus.atproto.oauth.discovery.Discovery;
 import org.sitenetsoft.quarkus.atproto.oauth.events.AtprotoSessionRevoked;
 import org.sitenetsoft.quarkus.atproto.oauth.flow.NonceStore;
@@ -38,12 +42,18 @@ import io.smallrye.mutiny.infrastructure.Infrastructure;
  * {@code invalid_grant} (revoked, replayed or expired grant) deletes the session, fires {@link AtprotoSessionRevoked}
  * and fails with {@link AtprotoSessionExpired}, unless the store shows another node refreshed in the meantime.
  * <p>
- * Every refresh response goes through the login's mandatory checks again ({@link PostTokenChecks} with the session's
- * DID as the expected account): {@code sub} present and the session's DID, the scope containing {@code atproto}, and
- * {@code sub} → DID document → PDS → its authorization server = the session's issuer. The session's PDS (and handle)
- * are taken from the DID document again, so an account that moved PDS under the same authorization server keeps
- * working. A failed check stores nothing; the old refresh token is spent, so the session is deleted and the call fails
- * with {@link AtprotoSessionExpired}.
+ * Every refresh repeats the login's mandatory checks:
+ * <ol>
+ * <li><b>before</b> the refresh token is spent, {@link PostTokenChecks#authority}: the session DID → DID document →
+ * current PDS → its authorization server = the session's issuer. A transient failure (directory or metadata outage)
+ * fails the call with {@link AtprotoTemporarilyUnavailable} and leaves the session and its refresh token untouched; a
+ * definitive one (DID not found or deactivated, the PDS now protected by another authorization server) deletes the
+ * session and fails with {@link AtprotoSessionExpired} without calling the token endpoint;</li>
+ * <li>after the response, {@code sub} must be present and the session's DID and the scope must contain
+ * {@code atproto}; otherwise nothing is stored and (the old refresh token being spent) the session ends.</li>
+ * </ol>
+ * The session's PDS and handle come from the pre-check's DID document, so an account that moved PDS under the same
+ * authorization server keeps working.
  */
 @ApplicationScoped
 public class Refresher {
@@ -100,34 +110,66 @@ public class Refresher {
                     && !s.accessExpiresWithin(Instant.now(), EXPIRY_SKEW_SECONDS)) {
                 return Uni.createFrom().item(s);
             }
-            return discovery.authorizationServer(URI.create(s.issuer()))
-                    .chain(as -> tokens.refresh(s.issuer(), as.tokenEndpoint(), s.dpopKey(), s.refreshToken()))
-                    .onFailure(e -> e instanceof OAuthServerError o && "invalid_grant".equals(o.error()))
-                    .recoverWithUni(e -> refused(s, (OAuthServerError) e))
-                    .chain(t -> t == null ? find(sessionId) : store(s, t));
+            // the issuer's authority over the account's current PDS, before the refresh token is spent
+            return checks.authority(s.did(), s.issuer())
+                    .onFailure(e -> !definitive(e)).transform(e -> unavailable(s, "the account's PDS and its "
+                            + "authorization server could not be checked", e))
+                    .onFailure(Refresher::definitive).recoverWithUni(e -> end(s, reason(e)))
+                    .chain(identity -> discovery.authorizationServer(URI.create(s.issuer()))
+                            .onFailure().transform(e -> unavailable(s, "the authorization server's metadata could "
+                                    + "not be fetched", e))
+                            .chain(as -> tokens.refresh(s.issuer(), as.tokenEndpoint(), s.dpopKey(),
+                                    s.refreshToken()))
+                            .onFailure(e -> e instanceof OAuthServerError o && "invalid_grant".equals(o.error()))
+                            .recoverWithUni(e -> refused(s, (OAuthServerError) e))
+                            .chain(t -> t == null ? find(sessionId) : store(s, t, identity)));
         });
     }
 
-    private Uni<AtprotoSession> store(AtprotoSession s, TokenResponse t) {
+    /**
+     * A pre-check failure that will not go away by retrying: the DID is gone or deactivated, or its PDS is now
+     * protected by another authorization server. Anything else (directory or metadata outages, 5xx, timeouts) is
+     * transient.
+     */
+    static boolean definitive(Throwable e) {
+        if (e instanceof PostTokenChecks.IssuerMismatch) {
+            return true;
+        }
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof DidNotFound || t instanceof DidDeactivated) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static AtprotoTemporarilyUnavailable unavailable(AtprotoSession s, String what, Throwable e) {
+        LOG.infof("Not refreshing %s's session now: %s (%s); the session is kept", s.did(), what,
+                e.getClass().getSimpleName());
+        return new AtprotoTemporarilyUnavailable("The AT Protocol session of " + s.did() + " cannot be refreshed right "
+                + "now: " + what + "; try again later", e);
+    }
+
+    private Uni<AtprotoSession> store(AtprotoSession s, TokenResponse t, AtprotoIdentity identity) {
         if (t.sub().isEmpty()) {
             return end(s, "the refresh response has no sub");
         }
+        if (!t.sub().get().equals(s.did().value())) {
+            return end(s, "sub mismatch: the refreshed tokens are for another account");
+        }
         String scope = t.scope().orElse(s.grantedScope());
-        TokenResponse withScope = new TokenResponse(t.accessToken(), t.refreshToken(), t.expiresIn(),
-                java.util.Optional.of(scope), t.sub());
-        return checks.check(withScope, s.issuer(), java.util.Optional.of(s.did()))
-                .onFailure().recoverWithUni(e -> end(s, reason(e)))
-                .chain(identity -> {
-                    Map<String, String> n = new java.util.LinkedHashMap<>(s.nonces());
-                    n.putAll(nonces.snapshot(URI.create(s.issuer()), identity.pds()));
-                    AtprotoSession updated = new AtprotoSession(s.id(), s.did(), identity.handle(), identity.pds(),
-                            s.issuer(), scope, t.accessToken(), t.refreshToken(),
-                            Instant.now().plusSeconds(t.expiresIn()), s.dpopPrivateJwk(), n, s.created());
-                    if (!identity.pds().equals(s.pds())) {
-                        LOG.infof("%s moved from PDS %s to %s; the session follows", s.did(), s.pds(), identity.pds());
-                    }
-                    return replace(s, updated);
-                });
+        if (java.util.Arrays.stream(scope.trim().split("\\s+")).noneMatch("atproto"::equals)) {
+            return end(s, "the refreshed scope does not contain atproto");
+        }
+        Map<String, String> n = new java.util.LinkedHashMap<>(s.nonces());
+        n.putAll(nonces.snapshot(URI.create(s.issuer()), identity.pds()));
+        AtprotoSession updated = new AtprotoSession(s.id(), s.did(), identity.handle(), identity.pds(), s.issuer(),
+                scope, t.accessToken(), t.refreshToken(), Instant.now().plusSeconds(t.expiresIn()),
+                s.dpopPrivateJwk(), n, s.created());
+        if (!identity.pds().equals(s.pds())) {
+            LOG.infof("%s moved from PDS %s to %s; the session follows", s.did(), s.pds(), identity.pds());
+        }
+        return replace(s, updated);
     }
 
     private Uni<AtprotoSession> replace(AtprotoSession s, AtprotoSession updated) {

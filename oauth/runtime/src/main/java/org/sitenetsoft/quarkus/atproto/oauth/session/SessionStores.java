@@ -67,15 +67,24 @@ public class SessionStores {
         return blockingSessions;
     }
 
+    /**
+     * Stores a started login under its {@code state} and its browser binding: only the browser holding the binding
+     * cookie can find (and so consume) it.
+     */
     public Uni<Void> putPending(String state, PendingAuthorization entry, Duration ttl) {
         return run(pendingInline, () -> {
-            pending.put(state, entry, ttl);
+            pending.put(pendingKey(state, entry.browserBinding()), entry, ttl);
             return null;
         });
     }
 
-    public Uni<Optional<PendingAuthorization>> takePending(String state) {
-        return run(pendingInline, () -> pending.take(state));
+    /** Takes the started login for {@code state} and the hash of the request's binding cookie. */
+    public Uni<Optional<PendingAuthorization>> takePending(String state, String bindingHash) {
+        return run(pendingInline, () -> pending.take(pendingKey(state, bindingHash)));
+    }
+
+    private static String pendingKey(String state, String bindingHash) {
+        return state + "." + bindingHash;
     }
 
     static <T> Uni<T> run(boolean inline, Supplier<T> work) {

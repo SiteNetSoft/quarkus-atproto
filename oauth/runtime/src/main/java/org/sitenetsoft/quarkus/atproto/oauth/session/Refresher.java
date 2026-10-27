@@ -2,7 +2,6 @@ package org.sitenetsoft.quarkus.atproto.oauth.session;
 
 import java.net.URI;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -16,7 +15,9 @@ import org.sitenetsoft.quarkus.atproto.oauth.AtprotoSessionExpired;
 import org.sitenetsoft.quarkus.atproto.oauth.discovery.Discovery;
 import org.sitenetsoft.quarkus.atproto.oauth.events.AtprotoSessionRevoked;
 import org.sitenetsoft.quarkus.atproto.oauth.flow.NonceStore;
+import org.sitenetsoft.quarkus.atproto.oauth.flow.LoginFailure;
 import org.sitenetsoft.quarkus.atproto.oauth.flow.OAuthServerError;
+import org.sitenetsoft.quarkus.atproto.oauth.flow.PostTokenChecks;
 import org.sitenetsoft.quarkus.atproto.oauth.flow.TokenClient;
 import org.sitenetsoft.quarkus.atproto.oauth.flow.TokenResponse;
 
@@ -36,6 +37,13 @@ import io.smallrye.mutiny.infrastructure.Infrastructure;
  * </ul>
  * {@code invalid_grant} (revoked, replayed or expired grant) deletes the session, fires {@link AtprotoSessionRevoked}
  * and fails with {@link AtprotoSessionExpired}, unless the store shows another node refreshed in the meantime.
+ * <p>
+ * Every refresh response goes through the login's mandatory checks again ({@link PostTokenChecks} with the session's
+ * DID as the expected account): {@code sub} present and the session's DID, the scope containing {@code atproto}, and
+ * {@code sub} → DID document → PDS → its authorization server = the session's issuer. The session's PDS (and handle)
+ * are taken from the DID document again, so an account that moved PDS under the same authorization server keeps
+ * working. A failed check stores nothing; the old refresh token is spent, so the session is deleted and the call fails
+ * with {@link AtprotoSessionExpired}.
  */
 @ApplicationScoped
 public class Refresher {
@@ -49,15 +57,17 @@ public class Refresher {
     private final Discovery discovery;
     private final NonceStore nonces;
     private final Event<AtprotoSessionRevoked> revoked;
+    private final PostTokenChecks checks;
     private final Map<String, CompletableFuture<AtprotoSession>> inFlight = new ConcurrentHashMap<>();
 
     public Refresher(SessionStores stores, TokenClient tokens, Discovery discovery, NonceStore nonces,
-            Event<AtprotoSessionRevoked> revoked) {
+            Event<AtprotoSessionRevoked> revoked, PostTokenChecks checks) {
         this.stores = stores;
         this.tokens = tokens;
         this.discovery = discovery;
         this.nonces = nonces;
         this.revoked = revoked;
+        this.checks = checks;
     }
 
     /**
@@ -99,19 +109,28 @@ public class Refresher {
     }
 
     private Uni<AtprotoSession> store(AtprotoSession s, TokenResponse t) {
-        if (t.sub().isPresent() && !t.sub().get().equals(s.did().value())) {
-            return Uni.createFrom().failure(new AtprotoSessionExpired(
-                    "The refreshed token is for another account than the session's; sign in again"));
+        if (t.sub().isEmpty()) {
+            return end(s, "the refresh response has no sub");
         }
         String scope = t.scope().orElse(s.grantedScope());
-        if (Arrays.stream(scope.trim().split("\\s+")).noneMatch("atproto"::equals)) {
-            return Uni.createFrom().failure(new AtprotoSessionExpired(
-                    "The refreshed token's scope lacks atproto; sign in again"));
-        }
-        Map<String, String> n = new java.util.LinkedHashMap<>(s.nonces());
-        n.putAll(nonces.snapshot(URI.create(s.issuer()), s.pds()));
-        AtprotoSession updated = s.withTokens(t.accessToken(), t.refreshToken(),
-                Instant.now().plusSeconds(t.expiresIn()), scope, n);
+        TokenResponse withScope = new TokenResponse(t.accessToken(), t.refreshToken(), t.expiresIn(),
+                java.util.Optional.of(scope), t.sub());
+        return checks.check(withScope, s.issuer(), java.util.Optional.of(s.did()))
+                .onFailure().recoverWithUni(e -> end(s, reason(e)))
+                .chain(identity -> {
+                    Map<String, String> n = new java.util.LinkedHashMap<>(s.nonces());
+                    n.putAll(nonces.snapshot(URI.create(s.issuer()), identity.pds()));
+                    AtprotoSession updated = new AtprotoSession(s.id(), s.did(), identity.handle(), identity.pds(),
+                            s.issuer(), scope, t.accessToken(), t.refreshToken(),
+                            Instant.now().plusSeconds(t.expiresIn()), s.dpopPrivateJwk(), n, s.created());
+                    if (!identity.pds().equals(s.pds())) {
+                        LOG.infof("%s moved from PDS %s to %s; the session follows", s.did(), s.pds(), identity.pds());
+                    }
+                    return replace(s, updated);
+                });
+    }
+
+    private Uni<AtprotoSession> replace(AtprotoSession s, AtprotoSession updated) {
         return stores.sessions().replaceIfRefreshToken(updated, s.refreshToken()).chain(replaced -> {
             if (replaced) {
                 LOG.debugf("Refreshed the access token of %s", s.did());
@@ -120,6 +139,31 @@ public class Refresher {
             LOG.debugf("Another refresh of %s's session won the compare-and-set; using the stored session", s.did());
             return find(s.id());
         });
+    }
+
+    private static String reason(Throwable e) {
+        String m = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        return e instanceof LoginFailure && m.startsWith("Login refused: ") ? m.substring("Login refused: ".length())
+                : m;
+    }
+
+    /** A refresh response that failed the checks: nothing stored, the session (its refresh token spent) ends. */
+    private <T> Uni<T> end(AtprotoSession s, String reason) {
+        LOG.infof("The refreshed tokens of %s's session failed a check (%s); the session ends", s.did(), reason);
+        return stores.sessions().delete(s.id()).chain(v -> fireRevoked(s, "refresh check failed: " + reason))
+                .chain(v -> Uni.createFrom().failure(new AtprotoSessionExpired("The AT Protocol session of " + s.did()
+                        + " ended: " + reason + "; sign in again")));
+    }
+
+    private Uni<Void> fireRevoked(AtprotoSession s, String reason) {
+        return Uni.createFrom().item(() -> {
+            try {
+                revoked.fire(new AtprotoSessionRevoked(s.did(), reason));
+            } catch (RuntimeException ex) {
+                LOG.warnf("An AtprotoSessionRevoked observer failed for %s: %s", s.did(), ex.toString());
+            }
+            return (Void) null;
+        }).runSubscriptionOn(Infrastructure.getDefaultWorkerPool());
     }
 
     /**
@@ -133,14 +177,8 @@ public class Refresher {
             }
             LOG.infof("The authorization server refused the refresh of %s's session (%s); the session ends", s.did(),
                     e.error());
-            return stores.sessions().delete(s.id()).chain(v -> Uni.createFrom().item(() -> {
-                try {
-                    revoked.fire(new AtprotoSessionRevoked(s.did(), "refresh refused: " + e.error()));
-                } catch (RuntimeException ex) {
-                    LOG.warnf("An AtprotoSessionRevoked observer failed for %s: %s", s.did(), ex.toString());
-                }
-                return (Void) null;
-            }).runSubscriptionOn(Infrastructure.getDefaultWorkerPool())).chain(v -> Uni.createFrom().failure(
+            return stores.sessions().delete(s.id()).chain(v -> fireRevoked(s, "refresh refused: " + e.error()))
+                    .chain(v -> Uni.createFrom().failure(
                     new AtprotoSessionExpired("The AT Protocol session of " + s.did() + " ended (" + e.error()
                             + "); sign in again")));
         });

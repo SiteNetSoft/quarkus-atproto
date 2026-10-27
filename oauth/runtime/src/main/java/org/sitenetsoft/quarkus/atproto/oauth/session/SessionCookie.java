@@ -32,6 +32,10 @@ import io.vertx.ext.web.RoutingContext;
  * maximum age, {@code Secure} outside dev and test mode. The key is SHA-256 of
  * {@code quarkus.atproto.oauth.session.encryption-key} (at least 32 characters); in dev and test mode a random key is
  * generated per run when it is unset, in production it is required.
+ * <p>
+ * Also the login's <b>browser-binding cookie</b> ({@code <cookie-name>-binding}): a random value set by the login
+ * endpoint, {@code Path} = the callback path, {@code Max-Age} = {@code pending.ttl}; the pending login stores its
+ * SHA-256 and the callback requires it, so a callback URL completed in another browser (login CSRF) fails.
  */
 @Singleton
 public class SessionCookie {
@@ -66,6 +70,54 @@ public class SessionCookie {
     /** The cookie name. */
     public String name() {
         return name;
+    }
+
+    /** The browser-binding cookie's name. */
+    public String bindingName() {
+        return name + "-binding";
+    }
+
+    /** Sets a fresh browser-binding cookie for a login starting now; returns the value's hash for the pending entry. */
+    public String setBinding(RoutingContext ctx) {
+        byte[] b = new byte[32];
+        RANDOM.nextBytes(b);
+        String value = Base64.getUrlEncoder().withoutPadding().encodeToString(b);
+        ctx.response().addCookie(Cookie.cookie(bindingName(), value).setPath(callbackPath()).setHttpOnly(true)
+                .setSecure(secure).setSameSite(CookieSameSite.LAX).setMaxAge(config.pending().ttl().toSeconds()));
+        return bindingHash(value);
+    }
+
+    /** Clears the browser-binding cookie. */
+    public void clearBinding(RoutingContext ctx) {
+        ctx.response().addCookie(Cookie.cookie(bindingName(), "").setPath(callbackPath()).setHttpOnly(true)
+                .setSecure(secure).setSameSite(CookieSameSite.LAX).setMaxAge(0));
+    }
+
+    /** The hash of the request's browser-binding cookie, if it has a plausible one. */
+    public Optional<String> bindingHash(HttpServerRequest request) {
+        Cookie c = request.getCookie(bindingName());
+        if (c == null || c.getValue() == null || c.getValue().isEmpty() || c.getValue().length() > 128) {
+            return Optional.empty();
+        }
+        return Optional.of(bindingHash(c.getValue()));
+    }
+
+    /** base64url SHA-256 of a binding value. */
+    static String bindingHash(String value) {
+        try {
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** The callback's path as the browser sees it (under {@code quarkus.http.root-path}). */
+    private String callbackPath() {
+        String root = org.eclipse.microprofile.config.ConfigProvider.getConfig()
+                .getOptionalValue("quarkus.http.root-path", String.class).orElse("/");
+        String cb = config.callbackPath().startsWith("/") ? config.callbackPath() : "/" + config.callbackPath();
+        return (root.endsWith("/") ? root.substring(0, root.length() - 1) : root) + cb;
     }
 
     /** Sets the session cookie for {@code sessionId}. */

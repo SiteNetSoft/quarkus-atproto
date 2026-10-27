@@ -61,13 +61,32 @@ class SessionsTest {
     void pendingTakeRemovesAndExpires() {
         InMemoryPendingAuthorizationStore store = new InMemoryPendingAuthorizationStore();
         PendingAuthorization p = new PendingAuthorization("https://as.example.com", URI.create("https://as.example.com/t"),
-                Optional.of(DID), Optional.empty(), "verifier-secret", Map.of("kty", "EC"), "atproto", "/", Instant.now());
+                Optional.of(DID), Optional.empty(), "verifier-secret", Map.of("kty", "EC"), "atproto", "/", "binding-hash",
+                Instant.now());
         store.put("s1", p, Duration.ofMinutes(10));
         assertEquals(Optional.of(p), store.take("s1"));
         assertEquals(Optional.empty(), store.take("s1"));
         store.put("s2", p, Duration.ofMillis(-1));
         assertEquals(Optional.empty(), store.take("s2"));
         assertFalse(p.toString().contains("verifier-secret"), p.toString());
+        assertFalse(p.toString().contains("binding-hash"), p.toString());
+    }
+
+    @Test
+    void fullPendingStoreEvictsInsteadOfFailing() {
+        InMemoryPendingAuthorizationStore store = new InMemoryPendingAuthorizationStore(3);
+        PendingAuthorization p = new PendingAuthorization("https://as.example.com", URI.create("https://as.example.com/t"),
+                Optional.empty(), Optional.empty(), "v", Map.of("kty", "EC"), "atproto", "/", "b", Instant.now());
+        for (int i = 0; i < 50; i++) {
+            store.put("s" + i, p, Duration.ofMinutes(10)); // never throws
+        }
+        assertTrue(store.size() <= 3, "size " + store.size());
+        // what is still held is still usable
+        int kept = 0;
+        for (int i = 0; i < 50; i++) {
+            kept += store.take("s" + i).isPresent() ? 1 : 0;
+        }
+        assertTrue(kept >= 1 && kept <= 3, "kept " + kept);
     }
 
     @Test

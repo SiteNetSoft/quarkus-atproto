@@ -24,12 +24,14 @@ public class LoginFlowTest {
 
     static final String HANDLE = "alice.example.test";
     static final String NOBODY = "nobody.example.test";
+    static final String BOB_HANDLE = "bob.example.test";
     static final int[] PORTS = FakeAtproto.reservePorts(LoginFlowTest.class.getName() + ".ports");
     static final FakeAtproto FAKE = FakeAtproto.start(PORTS[0], PORTS[1], PORTS[2]);
     static final FakeAccount ALICE = FAKE.account(HANDLE);
+    static final FakeAccount BOB = FAKE.account(BOB_HANDLE);
 
     @RegisterExtension
-    static final QuarkusUnitTest config = OAuthTestSupport.app(FAKE, List.of(HANDLE, NOBODY));
+    static final QuarkusUnitTest config = OAuthTestSupport.app(FAKE, List.of(HANDLE, NOBODY, BOB_HANDLE));
 
     @Inject
     AtprotoSessionStore sessions;
@@ -37,7 +39,43 @@ public class LoginFlowTest {
     @AfterEach
     void reset() {
         FAKE.clear();
-        sessions.findByDid(ALICE.did()).forEach(s -> sessions.delete(s.id()));
+        for (FakeAccount a : List.of(ALICE, BOB)) {
+            sessions.findByDid(a.did()).forEach(s -> sessions.delete(s.id()));
+        }
+    }
+
+    @Test
+    void callbackFromAnotherBrowserRejected() {
+        // the victim is signed in as alice
+        Browser.Login victim = Browser.login(HANDLE);
+        // the attacker consents for bob and sends the victim the callback URL
+        URI attackerCallback = Browser.authorize(Browser.startLogin(BOB_HANDLE));
+        Response r = Browser.callback(attackerCallback, null, victim.cookie());
+        assertEquals(401, r.statusCode(), r.body().asString());
+        assertNull(r.cookie(Browser.COOKIE));
+        assertTrue(sessions.findByDid(BOB.did()).isEmpty());
+        assertEquals(1, FAKE.as().tokenCount(), "only the victim's own login exchanged a code");
+        // the victim's session is untouched
+        assertEquals(ALICE.did().value(), Browser.get("/me", victim.cookie()).body().asString());
+        assertEquals(1, sessions.findByDid(ALICE.did()).size());
+        // a forged binding cookie fails too, and neither attempt consumed the attacker's pending login
+        assertEquals(401, Browser.callback(attackerCallback, "forged-binding", victim.cookie()).statusCode());
+        assertEquals(401, Browser.callback(attackerCallback, Browser.binding(Browser.authorize(
+                Browser.startLogin(HANDLE))), null).statusCode()); // another login's (valid) binding
+        assertEquals(302, Browser.callback(attackerCallback).statusCode());
+        assertEquals(1, sessions.findByDid(BOB.did()).size());
+        assertEquals(ALICE.did().value(), Browser.get("/me", victim.cookie()).body().asString());
+    }
+
+    @Test
+    void callbackChecksIssBeforeError() {
+        FAKE.as().wrongIss();
+        FAKE.as().denyNext();
+        URI callbackUrl = Browser.authorize(Browser.startLogin(HANDLE));
+        Response r = Browser.callback(callbackUrl);
+        assertEquals(401, r.statusCode());
+        assertTrue(r.body().asString().contains("iss"), r.body().asString());
+        assertTrue(!r.body().asString().contains("access_denied"), r.body().asString());
     }
 
     @Test

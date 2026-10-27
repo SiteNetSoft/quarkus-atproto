@@ -23,6 +23,10 @@ import io.restassured.response.Response;
 final class Browser {
 
     static final String COOKIE = "atproto-session";
+    /** The login's browser-binding cookie, set by the login endpoint and required by the callback. */
+    static final String BINDING = "atproto-session-binding";
+    /** Binding cookies by {@code state}, as this browser received them. */
+    private static final java.util.Map<String, String> BINDINGS = new java.util.concurrent.ConcurrentHashMap<>();
     private static final HttpClient JDK = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofSeconds(5)).build();
 
@@ -54,13 +58,45 @@ final class Browser {
         URI authorize = URI.create(login.header("Location"));
         HttpResponse<String> r = jdkGet(authorize);
         assertEquals(302, r.statusCode(), () -> "authorize: " + r.statusCode() + " " + r.body());
-        return URI.create(r.headers().firstValue("Location").orElseThrow());
+        URI callbackUrl = URI.create(r.headers().firstValue("Location").orElseThrow());
+        String binding = login.cookie(BINDING);
+        if (binding != null) {
+            param(callbackUrl, "state").ifPresent(state -> BINDINGS.put(state, binding));
+        }
+        return callbackUrl;
     }
 
-    /** {@code GET} the callback URL on the app (its origin replaced by the test server's). */
+    /** The binding cookie this browser got when it started the login that {@code callbackUrl} completes. */
+    static String binding(URI callbackUrl) {
+        return BINDINGS.get(param(callbackUrl, "state").orElse(""));
+    }
+
+    /** {@code GET} the callback URL in the browser that started the login (with its binding cookie). */
     static Response callback(URI callbackUrl) {
+        return callback(callbackUrl, binding(callbackUrl), null);
+    }
+
+    /**
+     * {@code GET} the callback URL on the app (its origin replaced by the test server's) with the given binding and
+     * session cookies ({@code null}: not sent): another browser, a forged binding, an already signed-in victim.
+     */
+    static Response callback(URI callbackUrl, String binding, String session) {
         String local = "http://127.0.0.1:" + port() + callbackUrl.getRawPath() + "?" + callbackUrl.getRawQuery();
-        return given().redirects().follow(false).urlEncodingEnabled(false).get(local);
+        io.restassured.specification.RequestSpecification spec = given().redirects().follow(false)
+                .urlEncodingEnabled(false);
+        if (binding != null) {
+            spec = spec.cookie(BINDING, binding);
+        }
+        if (session != null) {
+            spec = spec.cookie(COOKIE, session);
+        }
+        return spec.get(local);
+    }
+
+    /** The {@code Set-Cookie} header for cookie {@code name}. */
+    static String setCookie(Response r, String name) {
+        return r.headers().getValues("Set-Cookie").stream().filter(v -> v.startsWith(name + "=")).findFirst()
+                .orElse(null);
     }
 
     /** The whole flow for {@code handle}; asserts the callback redirected and set the session cookie. */

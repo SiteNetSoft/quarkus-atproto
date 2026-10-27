@@ -26,6 +26,7 @@ import org.sitenetsoft.quarkus.atproto.oauth.client.ClientIdentity;
 import org.sitenetsoft.quarkus.atproto.oauth.discovery.DiscoveredServer;
 import org.sitenetsoft.quarkus.atproto.oauth.discovery.Discovery;
 import org.sitenetsoft.quarkus.atproto.oauth.session.PendingAuthorization;
+import org.sitenetsoft.quarkus.atproto.oauth.session.SessionCookie;
 import org.sitenetsoft.quarkus.atproto.oauth.session.SessionStores;
 
 import io.smallrye.mutiny.Uni;
@@ -36,8 +37,8 @@ import io.vertx.ext.web.RoutingContext;
 /**
  * {@code GET|POST {login-path}?handle=<handle | DID | server URL>[&redirect=<local path>]}: discovery, a new DPoP key,
  * PKCE and {@code state}, a pushed authorization request (with the fallback scope once on {@code invalid_scope} when
- * configured), the pending entry, then 302 to the authorization endpoint with {@code client_id} and
- * {@code request_uri} only.
+ * configured), the pending entry (bound to this browser by a binding cookie, see {@link SessionCookie}), then 302 to
+ * the authorization endpoint with {@code client_id} and {@code request_uri} only.
  */
 @Singleton
 public class LoginHandler implements Handler<RoutingContext> {
@@ -50,14 +51,16 @@ public class LoginHandler implements Handler<RoutingContext> {
     private final Discovery discovery;
     private final ParClient par;
     private final SessionStores stores;
+    private final SessionCookie cookie;
 
     public LoginHandler(OAuthConfig config, ClientIdentity client, Discovery discovery, ParClient par,
-            SessionStores stores) {
+            SessionStores stores, SessionCookie cookie) {
         this.config = config;
         this.client = client;
         this.discovery = discovery;
         this.par = par;
         this.stores = stores;
+        this.cookie = cookie;
     }
 
     /** Where the login starts: the server, and the account when one was given. */
@@ -71,12 +74,14 @@ public class LoginHandler implements Handler<RoutingContext> {
     @Override
     public void handle(RoutingContext ctx) {
         Context context = ctx.vertx().getOrCreateContext();
-        Responses.params(ctx).chain(this::start).subscribe().with(
+        // on the event loop, before any hop: the cookie goes out with the redirect
+        String binding = cookie.setBinding(ctx);
+        Responses.params(ctx).chain(params -> start(params, binding)).subscribe().with(
                 location -> Responses.on(context, () -> Responses.redirect(ctx, location)),
                 error -> Responses.on(context, () -> Responses.fail(ctx, config, "login", error)));
     }
 
-    private Uni<String> start(Map<String, String> params) {
+    private Uni<String> start(Map<String, String> params, String browserBinding) {
         String input = params.getOrDefault("handle", "").strip();
         if (input.isEmpty()) {
             throw new LoginFailure(400, "invalid_request", "Enter your handle (for example alice.bsky.social)");
@@ -90,7 +95,7 @@ public class LoginHandler implements Handler<RoutingContext> {
                 PendingAuthorization pending = new PendingAuthorization(start.server().as().issuer(),
                         start.server().as().tokenEndpoint(), start.expectedDid(), start.handle(), verifier,
                         Jwk.ofPrivate(dpopKey.getPrivate(), dpopKey.getPublic()), pushed.scope(), target,
-                        Instant.now());
+                        browserBinding, Instant.now());
                 return stores.putPending(state, pending, config.pending().ttl())
                         .map(v -> authorizeUrl(start.server().as().authorizationEndpoint(), pushed.requestUri()));
             });

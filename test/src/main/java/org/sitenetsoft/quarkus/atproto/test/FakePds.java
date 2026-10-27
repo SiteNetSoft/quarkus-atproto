@@ -80,6 +80,7 @@ public final class FakePds {
       new ConcurrentHashMap<>();
   private volatile int protectedResourceStatus = 200;
   private volatile String protectedResourceRedirect;
+  private volatile FakeAuthorizationServer trustedAs;
 
   FakePds(FakeAtproto fake) {
     this.fake = fake;
@@ -202,7 +203,8 @@ public final class FakePds {
     }
     FakeAuthorizationServer.AccessToken at;
     try {
-      at = fake.as().introspect(token);
+      FakeAuthorizationServer issuer = trustedAs != null ? trustedAs : fake.as();
+      at = issuer.introspect(token);
     } catch (IllegalArgumentException e) {
       throw new XrpcError(401, "invalid_token", e.getMessage(),
           "DPoP error=\"invalid_token\", error_description=\"" + e.getMessage().replace("\"", "'") + "\"");
@@ -488,6 +490,15 @@ public final class FakePds {
 
   // ---- knobs and inspection ---------------------------------------------------------------------------------------
 
+  /**
+   * This PDS accepts access tokens issued by {@code as} (another network's authorization server) instead of its own
+   * network's (until {@link FakeAtproto#clear()}): with {@link #authorizationServers} it models a PDS an account moved
+   * to under the same entryway.
+   */
+  public void trustAuthorizationServer(FakeAuthorizationServer as) {
+    trustedAs = as;
+  }
+
   /** Rotates this PDS's DPoP nonce now. */
   public void rotateNonceNow() {
     dpop.rotateNonce();
@@ -533,6 +544,7 @@ public final class FakePds {
     protectedResourceOverrides.clear();
     protectedResourceStatus = 200;
     protectedResourceRedirect = null;
+    trustedAs = null;
     records.clear();
     cids.clear();
     blobs.clear();

@@ -154,6 +154,7 @@ public final class FakeAuthorizationServer {
   private volatile boolean wrongIss;
   private volatile Did wrongSub;
   private volatile boolean dropAtprotoScope;
+  private volatile boolean dropSubOnRefresh;
   private final AtomicBoolean denyNext = new AtomicBoolean();
   private volatile Duration accessTokenTtl = Duration.ofMinutes(15);
   private final List<String> rejectedScopePrefixes = new CopyOnWriteArrayList<>();
@@ -394,7 +395,11 @@ public final class FakeAuthorizationServer {
           throw new OAuthError(400, "invalid_grant", "Refresh token replayed");
         }
         refreshCount.incrementAndGet();
-        Http.json(ctx, 200, issue(rt.grant()));
+        Map<String, Object> body = issue(rt.grant());
+        if (dropSubOnRefresh) {
+          body.remove("sub");
+        }
+        Http.json(ctx, 200, body);
       }
       default -> throw new OAuthError(400, "unsupported_grant_type", "Unsupported grant_type " + grantType);
     }
@@ -730,6 +735,11 @@ public final class FakeAuthorizationServer {
     wrongSub = did;
   }
 
+  /** Refresh responses carry no {@code sub} (until {@link FakeAtproto#clear()}). */
+  public void dropSubOnRefresh() {
+    dropSubOnRefresh = true;
+  }
+
   /** Token responses carry the granted scope without {@code atproto}. */
   public void dropAtprotoScope() {
     dropAtprotoScope = true;
@@ -798,6 +808,7 @@ public final class FakeAuthorizationServer {
     wrongIss = false;
     wrongSub = null;
     dropAtprotoScope = false;
+    dropSubOnRefresh = false;
     denyNext.set(false);
     accessTokenTtl = Duration.ofMinutes(15);
     rejectedScopePrefixes.clear();

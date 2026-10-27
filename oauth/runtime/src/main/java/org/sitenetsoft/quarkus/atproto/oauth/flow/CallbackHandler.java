@@ -1,8 +1,11 @@
 package org.sitenetsoft.quarkus.atproto.oauth.flow;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Singleton;
@@ -24,11 +27,19 @@ import io.vertx.core.Handler;
 import io.vertx.ext.web.RoutingContext;
 
 /**
- * {@code GET {callback-path}?code&state&iss} (or {@code ?error&state&iss}): takes (and so deletes) the pending entry
- * by {@code state}; an {@code error} ends the login; {@code iss} must be the authorization server the login was sent
- * to; the code is exchanged with the PKCE verifier and DPoP; the {@link PostTokenChecks} run; then the session is
- * stored, the cookie set and the browser sent to the login's target. Every failure answers 401 (or the error page)
- * with the reason and leaves no session.
+ * {@code GET {callback-path}?code&state&iss} (or {@code ?error&state&iss}):
+ * <ol>
+ * <li>the request must carry the login's browser-binding cookie; the pending entry is found by {@code state}
+ * <b>and</b> that cookie's hash, so a callback URL opened in another browser (login CSRF) finds nothing, consumes
+ * nothing and touches no session; the hash is then compared again in constant time and the cookie cleared;</li>
+ * <li>{@code iss} must be the authorization server the login was sent to (checked before {@code error}, RFC 9207);
+ * </li>
+ * <li>an {@code error} ends the login;</li>
+ * <li>the code is exchanged with the PKCE verifier and DPoP; the {@link PostTokenChecks} run;</li>
+ * <li>the session is stored, a previous session of this browser deleted, the cookie set and the browser sent to the
+ * login's target.</li>
+ * </ol>
+ * Every failure answers 401 (or the error page) with the reason and leaves no session.
  */
 @Singleton
 public class CallbackHandler implements Handler<RoutingContext> {
@@ -61,36 +72,55 @@ public class CallbackHandler implements Handler<RoutingContext> {
     public void handle(RoutingContext ctx) {
         Context context = ctx.vertx().getOrCreateContext();
         Optional<String> previous = cookie.sessionId(ctx.request());
-        complete(ctx).chain(done -> previous.map(id -> stores.sessions().delete(id)).orElse(Uni.createFrom().voidItem())
-                .map(v -> done))
+        AtomicBoolean bound = new AtomicBoolean();
+        // the previous session is deleted only after a fully successful login
+        complete(ctx, bound).chain(done -> previous.map(id -> stores.sessions().delete(id))
+                .orElse(Uni.createFrom().voidItem()).map(v -> done))
                 .subscribe().with(done -> Responses.on(context, () -> {
+                    cookie.clearBinding(ctx);
                     cookie.set(ctx, done.session().id());
                     Responses.redirect(ctx, done.target());
-                }), error -> Responses.on(context, () -> Responses.fail(ctx, config, "login callback", error)));
+                }), error -> Responses.on(context, () -> {
+                    if (bound.get()) {
+                        cookie.clearBinding(ctx);
+                    }
+                    Responses.fail(ctx, config, "login callback", error);
+                }));
     }
 
-    private Uni<Done> complete(RoutingContext ctx) {
+    private Uni<Done> complete(RoutingContext ctx, AtomicBoolean bound) {
         // read on the event loop, before any hop to another thread
         String state = ctx.queryParams().get("state");
         String error = ctx.queryParams().get("error");
         String description = ctx.queryParams().get("error_description");
         String iss = ctx.queryParams().get("iss");
         String code = ctx.queryParams().get("code");
+        Optional<String> binding = cookie.bindingHash(ctx.request());
         if (state == null || state.isEmpty()) {
             return Uni.createFrom().failure(new LoginFailure(400, "invalid_request", "The callback has no state"));
         }
-        return stores.takePending(state).chain(found -> {
+        if (binding.isEmpty()) {
+            return Uni.createFrom().failure(new LoginFailure(401, "invalid_state",
+                    "This sign-in was not started in this browser: please sign in again"));
+        }
+        return stores.takePending(state, binding.get()).chain(found -> {
             PendingAuthorization pending = found.orElseThrow(() -> new LoginFailure(401, "invalid_state",
-                    "Unknown, used or expired login state: please sign in again"));
-            if (error != null) {
-                throw new LoginFailure(401, AuthServerClient.abbreviate(error), "The sign-in was not completed: "
-                        + AuthServerClient.abbreviate(error)
-                        + (description == null ? "" : " (" + AuthServerClient.abbreviate(description) + ")"));
+                    "Unknown, used or expired login state, or a sign-in started in another browser: please sign in "
+                            + "again"));
+            if (!MessageDigest.isEqual(pending.browserBinding().getBytes(StandardCharsets.US_ASCII),
+                    binding.get().getBytes(StandardCharsets.US_ASCII))) {
+                throw new LoginFailure(401, "invalid_state", "This sign-in was not started in this browser");
             }
+            bound.set(true);
             if (iss == null || !iss.equals(pending.issuer())) {
                 throw new LoginFailure(401, "issuer_mismatch", "The callback's iss "
                         + (iss == null ? "is missing" : "'" + AuthServerClient.abbreviate(iss) + "'")
                         + " is not the authorization server the login was sent to (" + pending.issuer() + ")");
+            }
+            if (error != null) {
+                throw new LoginFailure(401, AuthServerClient.abbreviate(error), "The sign-in was not completed: "
+                        + AuthServerClient.abbreviate(error)
+                        + (description == null ? "" : " (" + AuthServerClient.abbreviate(description) + ")"));
             }
             if (code == null || code.isEmpty()) {
                 throw new LoginFailure(401, "invalid_request", "The callback has no code");

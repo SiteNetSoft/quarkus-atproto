@@ -59,7 +59,7 @@ public class CookieTest {
     @Test
     void cookieFlags() {
         Browser.Login login = Browser.login(HANDLE);
-        String setCookie = login.callback().header("Set-Cookie");
+        String setCookie = Browser.setCookie(login.callback(), Browser.COOKIE);
         String attributes = setCookie.toLowerCase(java.util.Locale.ROOT); // attribute names are case-insensitive
         assertTrue(setCookie.startsWith(Browser.COOKIE + "="), setCookie);
         assertTrue(attributes.contains("; httponly"), setCookie);
@@ -67,5 +67,21 @@ public class CookieTest {
         assertTrue(attributes.contains("; path=/"), setCookie);
         assertTrue(attributes.contains("; max-age=1209600"), setCookie); // 14 days
         assertFalse(attributes.contains("; secure"), "no Secure flag in test mode (plain http): " + setCookie);
+    }
+
+    @Test
+    void bindingCookieFlagsAndCleared() {
+        io.restassured.response.Response start = Browser.startLogin(HANDLE);
+        String binding = Browser.setCookie(start, Browser.BINDING);
+        String attributes = binding.toLowerCase(java.util.Locale.ROOT);
+        assertTrue(attributes.contains("; httponly"), binding);
+        assertTrue(attributes.contains("; samesite=lax"), binding);
+        assertTrue(attributes.contains("; path=/atproto/oauth/callback"), binding);
+        assertTrue(attributes.contains("; max-age=600"), binding); // pending.ttl
+        assertFalse(attributes.contains("; secure"), binding);
+        io.restassured.response.Response cb = Browser.callback(Browser.authorize(start));
+        assertEquals(302, cb.statusCode());
+        String cleared = Browser.setCookie(cb, Browser.BINDING);
+        assertTrue(cleared != null && cleared.toLowerCase(java.util.Locale.ROOT).contains("max-age=0"), cleared);
     }
 }

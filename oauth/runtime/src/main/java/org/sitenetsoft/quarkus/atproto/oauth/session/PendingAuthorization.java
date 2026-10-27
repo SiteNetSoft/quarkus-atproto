@@ -21,11 +21,13 @@ import org.sitenetsoft.atproto.syntax.Handle;
  * @param dpopPrivateJwk the DPoP key the PAR was made with (the session keeps it)
  * @param scope the scope requested
  * @param target where to send the browser after the login (a local path)
+ * @param browserBinding base64url SHA-256 of the binding cookie the login set in the browser that started it; the
+ *        callback must present that cookie (login CSRF protection, RFC 9700 §4.7.1)
  * @param created when the login started
  */
 public record PendingAuthorization(String issuer, URI tokenEndpoint, Optional<Did> expectedDid,
         Optional<Handle> handle, String codeVerifier, Map<String, Object> dpopPrivateJwk, String scope, String target,
-        Instant created) {
+        String browserBinding, Instant created) {
 
     public PendingAuthorization {
         Objects.requireNonNull(issuer, "issuer");
@@ -36,6 +38,7 @@ public record PendingAuthorization(String issuer, URI tokenEndpoint, Optional<Di
         dpopPrivateJwk = Map.copyOf(Objects.requireNonNull(dpopPrivateJwk, "dpopPrivateJwk"));
         Objects.requireNonNull(scope, "scope");
         Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(browserBinding, "browserBinding");
         Objects.requireNonNull(created, "created");
     }
 

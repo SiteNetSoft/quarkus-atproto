@@ -1,5 +1,7 @@
 package org.sitenetsoft.quarkus.atproto.test;
 
+import java.net.URI;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +26,7 @@ public final class FakePlcDirectory {
   private final FakeAtproto fake;
   private final List<Recorded> requests = new CopyOnWriteArrayList<>();
   private final Set<String> tombstones = ConcurrentHashMap.newKeySet();
+  private final Map<String, URI> movedPds = new ConcurrentHashMap<>();
 
   FakePlcDirectory(FakeAtproto fake) {
     this.fake = fake;
@@ -65,9 +68,17 @@ public final class FakePlcDirectory {
     Map<String, Object> service = new LinkedHashMap<>();
     service.put("id", "#atproto_pds");
     service.put("type", "AtprotoPersonalDataServer");
-    service.put("serviceEndpoint", fake.pdsUrl().toString());
+    service.put("serviceEndpoint", movedPds.getOrDefault(did, fake.pdsUrl()).toString());
     doc.put("service", List.of(service));
     return doc;
+  }
+
+  /**
+   * From now on {@code did}'s document names {@code pds} as its {@code #atproto_pds} (an account migration; until
+   * {@link FakeAtproto#clear()}).
+   */
+  public void movePds(Did did, URI pds) {
+    movedPds.put(did.value(), pds);
   }
 
   /** From now on {@code did} answers {@code 410 Gone}. */
@@ -81,6 +92,7 @@ public final class FakePlcDirectory {
 
   void clear() {
     tombstones.clear();
+    movedPds.clear();
     requests.clear();
   }
 }

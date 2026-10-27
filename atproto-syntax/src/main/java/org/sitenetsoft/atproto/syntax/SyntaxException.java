@@ -1,4 +1,4 @@
-package org.sitenetsoft.quarkus.atproto.syntax;
+package org.sitenetsoft.atproto.syntax;
 
 /** Thrown when a string is not a valid AT Protocol identifier of the requested type. */
 public class SyntaxException extends IllegalArgumentException {

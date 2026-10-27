@@ -1,4 +1,4 @@
-package org.sitenetsoft.quarkus.atproto.syntax;
+package org.sitenetsoft.atproto.syntax;
 
 import java.time.Instant;
 import java.util.regex.Pattern;

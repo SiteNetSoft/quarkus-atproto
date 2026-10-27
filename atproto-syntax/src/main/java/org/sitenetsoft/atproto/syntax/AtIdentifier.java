@@ -1,4 +1,4 @@
-package org.sitenetsoft.quarkus.atproto.syntax;
+package org.sitenetsoft.atproto.syntax;
 
 /** Either a {@link Did} or a {@link Handle}. */
 public sealed interface AtIdentifier permits Did, Handle {

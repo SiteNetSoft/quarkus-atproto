@@ -1,4 +1,4 @@
-package org.sitenetsoft.quarkus.atproto.syntax;
+package org.sitenetsoft.atproto.syntax;
 
 import java.util.Locale;
 import java.util.Set;

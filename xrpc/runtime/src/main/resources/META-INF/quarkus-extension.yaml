@@ -1,6 +1,6 @@
 name: "AT Protocol XRPC"
 artifact: ${project.groupId}:${project.artifactId}:${project.version}
-description: "AT Protocol XRPC client with identity-aware PDS routing and typed lexicon calls"
+description: "AT Protocol XRPC client with authorization retry and a Lexicon-validated records API"
 metadata:
   keywords:
     - "atproto"

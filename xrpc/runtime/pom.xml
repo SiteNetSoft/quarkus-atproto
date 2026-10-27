@@ -9,7 +9,7 @@
   </parent>
   <artifactId>quarkus-atproto-xrpc</artifactId>
   <name>Quarkus AT Protocol XRPC - Runtime</name>
-  <description>AT Protocol XRPC client with identity-aware PDS routing and typed lexicon calls</description>
+  <description>AT Protocol XRPC client with authorization retry and a Lexicon-validated records API</description>
   <dependencies>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-core</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-arc</artifactId></dependency>

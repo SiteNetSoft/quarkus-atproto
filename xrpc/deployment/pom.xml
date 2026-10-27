@@ -17,6 +17,8 @@
     <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>quarkus-atproto-identity-deployment</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>quarkus-safe-fetch-deployment</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-junit5-internal</artifactId><scope>test</scope></dependency>
+    <!-- site.standard.document for the records tests -->
+    <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-lexicons-standard-site</artifactId><version>${project.version}</version><scope>test</scope></dependency>
   </dependencies>
   <build>
     <plugins>

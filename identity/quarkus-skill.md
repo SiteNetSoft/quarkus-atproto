@@ -18,3 +18,6 @@
   `quarkus.atproto.identity.https-well-known-override."<handle>"=http://127.0.0.1:<port>/...` (test/dev only: ignored with a WARN in production; keys case-insensitive), and set
   `quarkus.safe-fetch.https-only=false`, `quarkus.safe-fetch.allow-private-addresses=true`. On hosts without a
   usable `resolv.conf`, `-Dvertx.disableDnsResolver=true` keeps Netty quiet.
+- `@QuarkusIntegrationTest` (packaged app, normal launch mode: the well-known override is ignored and test beans are
+  absent): use `FakeDns` from `quarkus-atproto-test` (`FakeDns.start(0).handle(account)`) and pass
+  `quarkus.atproto.identity.dns.servers=<dns.server()>` from a `QuarkusTestResourceLifecycleManager`.

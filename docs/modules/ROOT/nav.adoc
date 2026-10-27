@@ -1,0 +1,7 @@
+* xref:index.adoc[Introduction]
+* xref:syntax.adoc[Syntax types]
+* xref:identity.adoc[Identity]
+* xref:lexicons.adoc[Lexicons]
+* xref:xrpc.adoc[XRPC and records]
+* xref:oauth.adoc[OAuth]
+* xref:live-check.adoc[Live check against Bluesky]

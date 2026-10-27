@@ -1,0 +1,166 @@
+= OAuth
+
+`quarkus-atproto-oauth` is an https://atproto.com/specs/oauth[AT Protocol OAuth] client: pushed authorization requests
+(PAR), PKCE, DPoP-bound tokens and `private_key_jwt` client authentication. Users sign in with their Bluesky (or any
+AT Protocol) account at their own authorization server; the application then writes records to their repository.
+
+== Client identity
+
+* *Confidential client* (production, whenever `client-base-url` is a non-loopback URL): the `client_id` is
+  `<client-base-url><metadata-path>`, a client metadata document the extension serves, with `jwks_uri` (also served),
+  `token_endpoint_auth_method: private_key_jwt` and ES256. It needs `signing-key.location` (an ES256 key, PEM or JWK;
+  several for rotation: the first signs, all are published) and `session.encryption-key`. Startup fails, naming the
+  property, when one is missing.
+* *Localhost development client* (dev and test mode when `client-base-url` is unset or loopback): the `client_id` is
+  `http://localhost?redirect_uri=http://127.0.0.1:<port><callback-path>&scope=<scope>`, a public client with no key and
+  no hosting. Real authorization servers (bsky.social) accept it, so you can sign in with a real account from your
+  laptop: see xref:live-check.adoc[the live check]. It is refused in production.
+
+== Flow
+
+. A same-origin `POST {login-path}` with form fields `handle` (a handle, a DID, or an `https://` PDS or entryway URL)
+  and optional `redirect` (a local path).
+. The handle is resolved (xref:identity.adoc[Identity]) to the DID and PDS; the PDS's protected-resource metadata names
+  exactly one authorization server, whose metadata is checked (issuer = its origin, PAR required, `iss` in responses,
+  client metadata documents, ES256 DPoP, every endpoint https on the issuer's origin).
+. A new DPoP key, PKCE verifier and `state` are stored as a pending authorization (`pending.ttl`), the PAR is sent
+  (DPoP nonce handshake; client assertion for a confidential client; `login_hint`), and the browser is redirected to
+  the authorization server with a short-lived browser-binding cookie.
+. `GET {callback-path}?code&state&iss`: the binding cookie must match, `iss` must be the expected issuer, the code is
+  exchanged (PKCE, DPoP, client assertion).
+. Post-token checks: the granted scope contains `atproto`; `sub` is the expected DID, or (when the sign-in started from
+  a server URL) `sub` resolves to a PDS protected by the same issuer. Any failure aborts the sign-in, no session.
+. The session (DID, handle, PDS, issuer, granted scope, tokens, DPoP key, nonces) is stored and the browser is
+  redirected to `redirect` or `landing-page`.
+
+== Starting a sign-in
+
+Only `POST`, only same-origin: with `Sec-Fetch-Site` it must be `same-origin`; otherwise `Origin` must be the
+application's origin (the origin of `client-base-url` for a confidential client, the request's host for the development
+client). A cross-site or header-less request answers 403, `GET` answers 405. This prevents login CSRF (another site
+signing the user in, or linking, an account the attacker controls). Render a form on your own page; never link to the
+login endpoint with `<a href>`:
+
+[source,html]
+----
+<form method="post" action="/atproto/login">
+  <input name="handle" placeholder="alice.bsky.social"> <button>Sign in with Bluesky</button>
+</form>
+----
+
+One sign-in per browser can be in progress: starting a second one (another tab) makes the first one's callback fail
+with 401.
+
+== Sign-in modes
+
+`quarkus.atproto.oauth.mode` (runtime):
+
+* *`login`* (default): AT Protocol OAuth is the application's sign-in. The extension sets an encrypted session cookie
+  (`HttpOnly`, `SameSite=Lax`, `Secure` outside dev and test) and its authentication mechanism produces the
+  `SecurityIdentity`: principal = the DID, attributes `atproto.handle`, `atproto.pds`, `atproto.scope`, role `user`
+  plus what your `AtprotoRoleMapper` beans add. `POST {logout-path}` revokes (best effort) and ends the session.
+* *`link`*: the application signs users in with its own mechanism (form, OIDC, basic, ...) and they link an AT Protocol
+  account to their application user. The login endpoint requires that identity (401 otherwise); the callback must be
+  made by the same application user from the same browser; the link application principal → DID → session is stored
+  in `AtprotoAccountLinks`; no cookie of the extension's own. `POST {unlink-path}[?did=...]` ends it: 204, 400 when
+  several accounts are linked and `did` is missing, 401 without an application user, 404 when not linked.
+
+== In a request: `AtprotoUser`
+
+[source,java]
+----
+@Inject AtprotoUser user;   // request scoped
+
+@POST @Path("publish") @Authenticated
+public String publish(@QueryParam("title") String title) {
+    Document doc = new Document(null, publicationUri, null, null, title, null, null, null, null, null, null,
+            Datetime.now(), null, null);
+    return user.records().create(Nsid.parse(Document.NSID), doc).uri().toString();
+}
+----
+
+* `did()`, `handle()`, `pds()`, `scope()` (granted), `records()` / `reactiveRecords()`, `xrpc()`. Writes the granted
+  scope does not cover fail with `AtprotoScopeException` before anything is sent.
+* `link` mode: `did()` is the single linked account (`IllegalStateException` when there is none or several;
+  `forDid(did)` picks one). A link whose session ended throws `AtprotoSessionExpired`: link again. On the event loop
+  with an application link or session store, call `resolve()`, `didAsync()` or `reactiveRecordsAsync()` first; the
+  synchronous accessors there fail fast instead of blocking.
+
+== Background work: `AtprotoSessions`
+
+`@Inject AtprotoSessions sessions` works without a request: `find(did)` (the newest live session), `records(did)`,
+`reactiveRecords(did)`, `xrpc(did)`, `revoke(did)`. A scheduled job catches `AtprotoSessionExpired` (no session, or the
+refresh token was refused: ask the author to sign in again) and `AtprotoTemporarilyUnavailable` (the DID directory or
+the authorization server could not be reached; the session is kept: retry later). Call these from worker threads.
+
+Access tokens are refreshed transparently: one refresh per session in the process, compare-and-set on the refresh token
+across nodes, the issuer's authority over the account's PDS re-checked before a refresh token is spent. DPoP nonces are
+kept per server; a `use_dpop_nonce` answer is retried once.
+
+== Scopes
+
+`quarkus.atproto.oauth.scope` defaults to `atproto`: add what the application writes, for example
+
+----
+atproto repo:site.standard.publication?action=create&action=update repo:site.standard.document?action=create&action=update blob:image/*
+----
+
+The scope is registered in the client metadata (or the development `client_id`), and an authorization server only
+grants what the client registered. The *granted* scope can be narrower than the requested one: the session records the
+granted scope (`AtprotoUser.scope()`) and writes are checked against it. When an authorization server does not support
+granular scopes it answers PAR with `invalid_scope`; set `fallback-scope` (for example `atproto transition:generic`) to
+retry once with it (it is registered too).
+
+== Events and SPIs
+
+* CDI events (on a worker thread): `AtprotoLoggedIn(did, handle, Optional<String> appPrincipal)`,
+  `AtprotoLoggedOut(did, appPrincipal)`, `AtprotoSessionRevoked(did, reason)`.
+* Stores (in-memory `@DefaultBean`s that WARN once in production; provide your own bean, blocking or `Reactive*`, to
+  survive restarts and run several nodes; encrypt tokens and DPoP keys at rest): `AtprotoSessionStore`,
+  `PendingAuthorizationStore`, `AtprotoAccountLinks`.
+* `AtprotoRoleMapper` beans add roles to the built-in `user`.
+
+== Configuration
+
+[cols="3,2,4"]
+|===
+|Property |Default |Purpose
+
+|`quarkus.atproto.oauth.enabled` (build time) |`true` |When `false` no routes are registered
+|`quarkus.atproto.oauth.mode` |`login` |`login` or `link`
+|`quarkus.atproto.oauth.client-base-url` |none |Public base URL; makes this a confidential client. Required in production
+|`quarkus.atproto.oauth.client-name` |none |`client_name` in the client metadata
+|`quarkus.atproto.oauth.client-uri` |`client-base-url` |`client_uri` in the client metadata
+|`quarkus.atproto.oauth.logo-uri` |none |`logo_uri` in the client metadata
+|`quarkus.atproto.oauth.tos-uri` |none |`tos_uri` in the client metadata
+|`quarkus.atproto.oauth.policy-uri` |none |`policy_uri` in the client metadata
+|`quarkus.atproto.oauth.scope` |`atproto` |Scopes requested, space separated
+|`quarkus.atproto.oauth.fallback-scope` |none |Scope to retry PAR with once after `invalid_scope`
+|`quarkus.atproto.oauth.login-path` |`/atproto/login` |Login endpoint (same-origin `POST`)
+|`quarkus.atproto.oauth.callback-path` |`/atproto/oauth/callback` |OAuth callback (the redirect URI)
+|`quarkus.atproto.oauth.logout-path` |`/atproto/logout` |Logout endpoint (`login` mode)
+|`quarkus.atproto.oauth.unlink-path` |`/atproto/unlink` |Unlink endpoint (`link` mode)
+|`quarkus.atproto.oauth.metadata-path` |`/oauth-client-metadata.json` |Client metadata document; part of the `client_id`
+|`quarkus.atproto.oauth.jwks-path` |`/oauth/jwks.json` |The client's public JWKS (`jwks_uri`)
+|`quarkus.atproto.oauth.signing-key.location` |none |ES256 private keys (PEM PKCS#8 or JWK; file system or class path), comma separated; the first signs. Required for a confidential client
+|`quarkus.atproto.oauth.session.cookie-name` |`atproto-session` |Session cookie name (the binding cookie is `<name>-binding`)
+|`quarkus.atproto.oauth.session.encryption-key` |generated in dev and test |Key encrypting the session cookie, at least 32 characters. Required in production
+|`quarkus.atproto.oauth.session.max-age` |`14d` |How long a session lasts
+|`quarkus.atproto.oauth.pending.ttl` |`10m` |How long a started sign-in waits for its callback
+|`quarkus.atproto.oauth.landing-page` |`/` |Where to go after a sign-in without `redirect`
+|`quarkus.atproto.oauth.error-page` |none |Where to send a failed sign-in; unset: 401 with the reason
+|===
+
+The client metadata and JWKS are served under `quarkus.http.root-path`: include the root path in `client-base-url`.
+
+== Dev UI
+
+The card shows the client type and `client_id`, the served client metadata, the active sessions (no tokens; in-memory
+store only) and a sign-in box that posts to the login endpoint in a new tab.
+
+== Testing
+
+`quarkus-atproto-test` has fakes: `FakeAtproto` (a PLC directory, an authorization server and a PDS, strict about
+DPoP, PKCE, client assertions and scopes) and `FakeDns`. In `QuarkusUnitTest`/`@QuarkusTest` the development client is
+used; the repository's `integration-tests` module shows a `@QuarkusIntegrationTest` of the packaged application as a
+confidential client against the fakes (test resource `AtprotoFakes`), in `login` and `link` mode.

@@ -1,0 +1,58 @@
+= XRPC and records
+
+`quarkus-atproto-xrpc` is an https://atproto.com/specs/xrpc[XRPC] client and a records API that validates each record
+against its Lexicon before writing it to the user's PDS. Applications signed in through `quarkus-atproto-oauth` use it
+through `AtprotoUser.records()` (see xref:oauth.adoc[OAuth]); this page is for direct use.
+
+== XRPC client
+
+`XrpcClient` (blocking) and `ReactiveXrpcClient` (Mutiny) live in `atproto-xrpc-api`; the generated typed clients use
+them:
+
+[source,java]
+----
+@Inject ReactiveXrpcClient xrpc;
+
+RepoClient repo = new RepoClient(xrpc);
+Uni<GetRecord.Output> out = repo.getRecord(URI.create("https://pds.example.com"),
+    new GetRecord.Params(did, Nsid.parse("site.standard.document"), RecordKey.parse("3kabc"), null),
+    Optional.empty());
+----
+
+* `query` = `GET <service>/xrpc/<nsid>?<params>`; `procedure` = `POST` with a JSON input; `procedureBytes` posts a raw
+  body (a blob).
+* A non-2xx answer fails with `XrpcException` (`status()`, `error()`, `errorMessage()`, `rateLimit()`).
+* Transport is `quarkus-safe-fetch`: private addresses refused, https only; `POST`s never follow redirects.
+* `XrpcAuth` authorizes a call (`authorize(request)`) and decides on one resend of an error response
+  (`shouldRetry(response)`): a rotated DPoP nonce, a refreshed token. Success is never resent.
+
+== Records API
+
+[source,java]
+----
+@Inject RecordsImpl records;
+
+AtprotoRecords mine = records.blockingForRepo(did, pdsUri, auth);   // forRepo(...) → ReactiveAtprotoRecords
+RecordResult r = mine.create(Nsid.parse(Document.NSID), document);  // server-generated TID
+mine.put(collection, RecordKey.parse("self"), record, Optional.of(previousCid));
+Optional<Document> d = mine.get(collection, rkey, Document.class);  // empty on RecordNotFound
+mine.delete(collection, rkey);
+BlobRef cover = mine.uploadBlob(bytes, "image/png");
+----
+
+* A record is a generated class, a `JsonNode` or a `Map`; it is sent with its `$type` (added when missing, refused when
+  it names another collection).
+* Before anything is sent, the `WriteGuard` bean checks the action (the OAuth extension's guard checks the granted
+  scope) and the record is validated (`quarkus.atproto.lexicon.validation`). Problems fail with
+  `RecordValidationException` (`collection()`, `problems()`).
+* `RecordResult(AtUri uri, Cid cid, Optional<String> validationStatus)`.
+
+== Configuration
+
+[cols="3,1,4"]
+|===
+|Property (runtime) |Default |Purpose
+
+|`quarkus.atproto.xrpc.timeout` |`30s` |Timeout of one exchange (the authorization retry gets its own)
+|`quarkus.atproto.xrpc.max-response-size` |`5M` |Largest response body accepted
+|===

@@ -1,0 +1,94 @@
+= Live check against Bluesky
+
+A manual end-to-end check with a real Bluesky account: the sample application in `integration-tests` runs in dev mode
+on your machine, you sign in through bsky.social with the localhost development client (no hosting, no keys), publish
+a `site.standard.publication` and a `site.standard.document`, and read the document back from your PDS.
+
+The automated tests cover the same flow against fakes; this check is what proves it against the real network. It
+writes two public records to your repository: use a test account if you prefer.
+
+== Prerequisites
+
+* JDK 21 and Maven; the sibling projects `multikey-java`, `quarkus-safe-fetch` and `quarkus-did` installed (see the
+  repository README), then `mvn install` (or `mvn install -DskipTests`) at the repository root.
+* A Bluesky account (any AT Protocol account whose authorization server supports the development client works).
+* A browser on the same machine.
+
+== Steps
+
+. Start the sample in dev mode from the repository root:
++
+----
+mvn quarkus:dev -pl integration-tests
+----
++
+No `client-base-url` is set, so the extension uses the development client
+(`client_id=http://localhost?redirect_uri=http://127.0.0.1:8080/atproto/oauth/callback&scope=...`). The Dev UI card
+(http://127.0.0.1:8080/q/dev-ui/, extension "AT Protocol OAuth", page "OAuth client") shows it.
+
+. Open *http://127.0.0.1:8080/* (use `127.0.0.1`, not `localhost`: the authorization server sends you back to
+  `127.0.0.1`, and the sign-in's binding cookie must be on the same host).
+
+. Type your handle (`alice.bsky.social`) and press *Sign in with Bluesky*. You are sent to your authorization server
+  (bsky.social): sign in there if needed and approve the requested access (publications and documents, image uploads).
+  You come back to the sample's page, signed in.
+
+. Check the session: open http://127.0.0.1:8080/me. It shows your DID, handle, PDS and the *granted* scope.
+
+. Publish a publication: fill *Publication name* and a URL (`https://example.com` is fine) and press *Publish
+  publication*. The answer is JSON with the record's `uri` (`at://did:plc:.../site.standard.publication/<rkey>`).
+
+. Go back, fill a title (and optionally a path and plain text) and press *Publish document*. The answer has the
+  document's `uri`; its last segment is the `<rkey>`. The document's `site` is the publication's `at://` URI.
+
+. Read the document from your PDS (the `pds` of `/me`, the DID and the rkey from the URI):
++
+----
+curl -s 'https://<pds>/xrpc/com.atproto.repo.getRecord?repo=<did>&collection=site.standard.document&rkey=<rkey>'
+----
++
+The answer is `{"uri": ..., "cid": ..., "value": {"$type": "site.standard.document", "site": "at://...", "title":
+..., "publishedAt": ...}}`. Any Standard.site reader can now show it.
+
+. Stop dev mode (`q`). The sessions were in memory: they end with the process. To remove the records, delete them with a
+  repository explorer that can sign in (the sample's scope does not include `delete`).
+
+== Troubleshooting
+
+[cols="2,3"]
+|===
+|Symptom |What to do
+
+|The sign-in fails with `invalid_scope` (the authorization server refuses the granular scopes)
+|Retry with a fallback: add `quarkus.atproto.oauth.fallback-scope=atproto transition:generic` to
+`integration-tests/src/main/resources/application.properties` (dev mode reloads it) and sign in again. The granted
+scope then shown by `/me` is `transition:generic`, which covers all repository writes.
+
+|401 at the callback (`/atproto/oauth/callback`)
+|The callback must come back to the browser that started the sign-in, with its binding cookie: use the same browser,
+open the page at `http://127.0.0.1:8080` (not `localhost`), finish within 10 minutes (`pending.ttl`), and do not start
+a second sign-in in another tab meanwhile. Then sign in again.
+
+|403 `cross_site_request` when pressing *Sign in*
+|The form must be posted from the sample's own page; reload http://127.0.0.1:8080/ and submit from there.
+
+|`AtprotoTemporarilyUnavailable` / 503 ("temporarily unavailable")
+|The DID directory, your PDS or the authorization server could not be reached; the session is kept. Retry in a moment.
+
+|`HandleNotFound` / handle errors
+|Check the handle (a leading `@` is fine); a custom-domain handle needs its DNS `_atproto` record or its
+`/.well-known/atproto-did`.
+
+|403 on publish (`AtprotoScopeException`)
+|The granted scope does not cover that write: check `scope` in `/me`.
+|===
+
+== Record of runs
+
+[cols="1,1,3"]
+|===
+|Date |Account's PDS |Result
+
+|_not run yet_ | |The automated ITs pass against the fakes (JVM; native in CI); this live check needs a real account
+and a browser and is run by hand.
+|===

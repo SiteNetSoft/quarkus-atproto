@@ -12,7 +12,9 @@
   <dependencies>
     <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>quarkus-atproto-oauth</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>atproto-lexicons-standard-site</artifactId><version>${project.version}</version></dependency>
-    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-rest</artifactId></dependency>
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-rest-jackson</artifactId></dependency>
+    <!-- link mode: basic auth with embedded users stands in for the application's own sign-in -->
+    <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-elytron-security-properties-file</artifactId></dependency>
     <dependency><groupId>io.quarkus</groupId><artifactId>quarkus-junit</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.awaitility</groupId><artifactId>awaitility</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.sitenetsoft.quarkus</groupId><artifactId>quarkus-atproto-test</artifactId><version>${project.version}</version><scope>test</scope></dependency>
@@ -39,21 +41,52 @@
       <plugin><artifactId>maven-compiler-plugin</artifactId><configuration><annotationProcessorPaths combine.self="override"/><proc>none</proc></configuration></plugin>
       <plugin><artifactId>maven-surefire-plugin</artifactId></plugin>
       <plugin>
-        <!-- DemoFlowIT against the packaged app: the jar by default, the native executable with -Dnative -->
-        <artifactId>maven-failsafe-plugin</artifactId>
-        <version>${surefire-plugin.version}</version>
+        <!-- a free port for the packaged application: the fake authorization server fetches the client metadata from it -->
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
         <executions>
           <execution>
-            <goals><goal>integration-test</goal><goal>verify</goal></goals>
+            <id>reserve-app-port</id>
+            <phase>pre-integration-test</phase>
+            <goals><goal>reserve-network-port</goal></goals>
+            <configuration><portNames><portName>atproto.it.port</portName></portNames></configuration>
           </execution>
         </executions>
+      </plugin>
+      <plugin>
+        <!-- the ITs against the packaged app: the jar by default, the native executable with -Dnative.
+             Two runs: login mode (default profile) and link mode (profile "link") -->
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>${surefire-plugin.version}</version>
         <configuration>
           <systemPropertyVariables>
             <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
             <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
             <maven.home>${maven.home}</maven.home>
+            <quarkus.http.test-port>${atproto.it.port}</quarkus.http.test-port>
           </systemPropertyVariables>
         </configuration>
+        <executions>
+          <execution>
+            <id>login-mode</id>
+            <goals><goal>integration-test</goal><goal>verify</goal></goals>
+            <configuration>
+              <includes><include>**/LoginAndPublishIT.java</include></includes>
+              <summaryFile>${project.build.directory}/failsafe-reports/failsafe-summary-login.xml</summaryFile>
+            </configuration>
+          </execution>
+          <execution>
+            <id>link-mode</id>
+            <goals><goal>integration-test</goal><goal>verify</goal></goals>
+            <configuration>
+              <includes><include>**/LinkModeIT.java</include></includes>
+              <summaryFile>${project.build.directory}/failsafe-reports/failsafe-summary-link.xml</summaryFile>
+              <systemPropertyVariables>
+                <quarkus.test.integration-test-profile>link</quarkus.test.integration-test-profile>
+              </systemPropertyVariables>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

@@ -1,0 +1,87 @@
+= Quarkus AT Protocol
+:extension-status: experimental
+
+AT Protocol (Bluesky) building blocks for Quarkus, client side: sign a user in with their Bluesky or other AT Protocol
+account through AT Protocol OAuth, then write records to that user's own repository on their PDS. A blog engine
+publishes a post as a `site.standard.document` and every Standard.site reader can show it.
+
+Minimum supported Quarkus: *3.40 (LTS)*. Status: experimental, version 0.1.
+
+== Modules
+
+[cols="2,3"]
+|===
+|Artifact |Purpose
+
+|`atproto-syntax` |Validated string formats (DID, handle, NSID, TID, record key, AT-URI, CID, datetime, language), plain Java, see xref:syntax.adoc[Syntax types]
+|`atproto-lexicon-codegen` |Lexicon parser and Java generator (JavaPoet), plain Java, used by the packs and the lexicon extension
+|`atproto-xrpc-api` |`XrpcClient` / `ReactiveXrpcClient` interfaces the generated typed clients use
+|`atproto-lexicons-core` |Lexicon pack: the `com.atproto.*` subset the client needs, with generated types
+|`atproto-lexicons-standard-site` |Lexicon pack: Standard.site (`site.standard.*`), with generated types
+|`quarkus-atproto-identity` |Handle and DID resolution with the bidirectional check, see xref:identity.adoc[Identity]
+|`quarkus-atproto-lexicon` |Lexicon registry, record validation, code generation for your own Lexicons, see xref:lexicons.adoc[Lexicons]
+|`quarkus-atproto-xrpc` |XRPC client and a validated records API, see xref:xrpc.adoc[XRPC and records]
+|`quarkus-atproto-oauth` |AT Protocol OAuth client (PAR, PKCE, DPoP, `private_key_jwt`), sessions, `AtprotoUser`, see xref:oauth.adoc[OAuth]
+|`quarkus-atproto-test` |Fakes for tests: PLC directory, authorization server, PDS, DNS
+|`quarkus-atproto-bom` |Version alignment
+|===
+
+The extensions build on the Tier 1 extensions `quarkus-safe-fetch` (every outbound request) and `quarkus-did` (DID
+documents), and on `multikey-java` (keys).
+
+== Getting started
+
+[source,xml]
+----
+<dependency>
+  <groupId>org.sitenetsoft.quarkus</groupId>
+  <artifactId>quarkus-atproto-oauth</artifactId>
+</dependency>
+<dependency>
+  <groupId>org.sitenetsoft.quarkus</groupId>
+  <artifactId>atproto-lexicons-standard-site</artifactId>
+</dependency>
+----
+
+[source,properties]
+----
+quarkus.atproto.oauth.scope=atproto repo:site.standard.publication?action=create&action=update repo:site.standard.document?action=create&action=update blob:image/*
+# production only (dev mode uses the localhost development client):
+quarkus.atproto.oauth.client-base-url=https://blog.example.com
+quarkus.atproto.oauth.signing-key.location=/run/secrets/atproto-client-key.pem
+quarkus.atproto.oauth.session.encryption-key=${ATPROTO_SESSION_KEY}
+----
+
+A sign-in form on one of your pages (a sign-in must start with a same-origin `POST`):
+
+[source,html]
+----
+<form method="post" action="/atproto/login">
+  <input name="handle" placeholder="alice.bsky.social"> <button>Sign in with Bluesky</button>
+</form>
+----
+
+Then publish as the signed-in user:
+
+[source,java]
+----
+@Inject AtprotoUser user;
+
+@POST @Path("publish") @Authenticated
+public String publish(@QueryParam("title") String title) {
+    Document doc = new Document(null, URI.create(publicationAtUri), null, null, title, null, null, null, null,
+            null, null, Datetime.now(), "Plain text of the post", null);
+    return user.records().create(Nsid.parse(Document.NSID), doc).uri().toString();
+}
+----
+
+The `integration-tests` module of the repository is a complete sample application (login page, publishing a
+publication and a document, both sign-in modes) with end-to-end tests against the fakes, in JVM and native mode. To
+try it against your own Bluesky account, follow xref:live-check.adoc[the live check].
+
+== Native
+
+Every extension works in native mode (GraalVM/Mandrel 25 for Quarkus 3.40). The lexicon extension registers the Lexicon
+JSON as resources and every class listed in a pack's `META-INF/atproto/lexicons/index.json` (with its nested types)
+for reflection. Types generated from your own `src/main/lexicons` are not listed in an index: in native mode annotate
+the classes you serialise with `@RegisterForReflection(targets = ...)`.

@@ -1,0 +1,5 @@
+name: quarkus-atproto
+title: Quarkus AT Protocol
+version: dev
+nav:
+  - modules/ROOT/nav.adoc

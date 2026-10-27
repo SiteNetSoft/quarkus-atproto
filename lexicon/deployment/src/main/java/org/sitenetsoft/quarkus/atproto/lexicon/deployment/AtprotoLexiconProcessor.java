@@ -10,6 +10,7 @@ import java.util.TreeMap;
 import java.util.stream.Stream;
 
 import org.jboss.logging.Logger;
+import org.sitenetsoft.atproto.lexicon.codegen.GeneratedIndex;
 import org.sitenetsoft.atproto.syntax.Nsid;
 import org.sitenetsoft.quarkus.atproto.lexicon.AtprotoObjectMapperCustomizer;
 import org.sitenetsoft.quarkus.atproto.lexicon.LexiconRecorder;
@@ -30,6 +31,7 @@ import io.quarkus.deployment.builditem.ApplicationArchivesBuildItem;
 import io.quarkus.deployment.builditem.FeatureBuildItem;
 import io.quarkus.deployment.builditem.GeneratedResourceBuildItem;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBuildItem;
+import io.quarkus.deployment.builditem.nativeimage.ReflectiveClassBuildItem;
 import io.quarkus.deployment.pkg.builditem.CurateOutcomeBuildItem;
 import io.quarkus.paths.PathTree;
 
@@ -82,6 +84,58 @@ class AtprotoLexiconProcessor {
         recorder.register(found.resources);
         if (!found.resources.isEmpty()) {
             nativeResources.produce(new NativeImageResourceBuildItem(new ArrayList<>(found.resources.values())));
+        }
+    }
+
+    /**
+     * Native images: Jackson reads and writes the generated Lexicon types reflectively (records, their canonical
+     * constructors and accessors, nested object and union types). Registers every class named in every
+     * {@code META-INF/atproto/lexicons/index.json} of the application and its runtime dependencies (the Lexicon packs),
+     * with all their nested classes.
+     */
+    @BuildStep
+    ReflectiveClassBuildItem generatedTypesForReflection(CurateOutcomeBuildItem curate,
+            ApplicationArchivesBuildItem archives) {
+        java.util.Set<String> listed = new java.util.TreeSet<>();
+        archives.getRootArchive().accept(tree -> listed.addAll(indexClasses(tree, "the application")));
+        for (var dep : curate.getApplicationModel().getRuntimeDependencies()) {
+            listed.addAll(indexClasses(dep.getContentTree(), dep.toCompactCoords()));
+        }
+        java.util.Set<String> all = new java.util.TreeSet<>();
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        for (String name : listed) {
+            try {
+                addWithNested(Class.forName(name, false, cl), all);
+            } catch (ClassNotFoundException | LinkageError e) {
+                LOG.warnf("%s is listed in a Lexicon index but cannot be loaded (%s); not registered for reflection",
+                        name, e);
+                all.add(name);
+            }
+        }
+        LOG.debugf("Generated Lexicon types registered for reflection: %s", all);
+        return ReflectiveClassBuildItem.builder(all.toArray(String[]::new)).constructors().methods().fields().build();
+    }
+
+    static java.util.Collection<String> indexClasses(PathTree tree, String origin) {
+        java.util.Collection<String> found = tree.apply(GeneratedIndex.RESOURCE, visit -> {
+            if (visit == null) {
+                return java.util.List.<String> of();
+            }
+            try {
+                return GeneratedIndex.read(visit.getPath()).values();
+            } catch (RuntimeException e) {
+                LOG.warnf("%s in %s cannot be read: %s", GeneratedIndex.RESOURCE, origin, e.getMessage());
+                return java.util.List.<String> of();
+            }
+        });
+        return found == null ? java.util.List.of() : found;
+    }
+
+    private static void addWithNested(Class<?> type, java.util.Set<String> out) {
+        if (out.add(type.getName())) {
+            for (Class<?> nested : type.getDeclaredClasses()) {
+                addWithNested(nested, out);
+            }
         }
     }
 

@@ -18,8 +18,16 @@ Minimum supported Quarkus: **3.40 (LTS)**. Status: experimental, version 0.1.
 | `lexicon` | `quarkus-atproto-lexicon` | extension |
 | `xrpc` | `quarkus-atproto-xrpc` | extension |
 | `oauth` | `quarkus-atproto-oauth` | extension |
-| `test` | `quarkus-atproto-test` | test support |
+| `test` | `quarkus-atproto-test` | test support: `FakeAtproto` (PLC directory, authorization server, PDS), `FakeDns` |
+| `integration-tests` | not published | sample application and end-to-end tests (login and link mode, JVM and native) |
 | `bom` | `quarkus-atproto-bom` | BOM |
+
+## Documentation
+
+Antora docs in `docs/` (`docs/modules/ROOT/pages`): introduction, syntax types, identity, lexicons, XRPC and records,
+OAuth, and the manual [live check against Bluesky](docs/modules/ROOT/pages/live-check.adoc) (the sample in dev mode,
+signing in with a real account). Each module has a README; the extensions also ship a `quarkus-skill.md` for coding
+agents.
 
 ## OAuth: known limitations
 
@@ -39,6 +47,13 @@ Depends on sibling checkouts installed to the local repository, in this order: `
 
 ```
 mvn -T 8 install
+```
+
+This runs the unit and extension tests and the sample's integration tests against the packaged jar. Native:
+
+```
+mvn -T 8 verify -Dnative -pl integration-tests -am \
+    -Dquarkus.native.additional-build-args=-J-XX:TieredStopAtLevel=1,--parallelism=8
 ```
 
 ## License

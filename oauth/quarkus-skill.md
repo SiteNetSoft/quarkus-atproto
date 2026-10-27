@@ -31,3 +31,12 @@
   `quarkus.atproto.oauth.client-base-url` (public https), `signing-key.location` (ES256 PEM/JWK) and
   `session.encryption-key` (≥ 32 chars, `login` mode). Tests against fakes set `quarkus.safe-fetch.https-only=false`
   and `quarkus.safe-fetch.allow-private-addresses=true`. Never log tokens, codes, keys or cookie values.
+- Scopes must be registered: the client metadata (or development `client_id`) carries `scope` + `fallback-scope`, and
+  the authorization server refuses anything else. `invalid_scope` from bsky.social → set
+  `quarkus.atproto.oauth.fallback-scope=atproto transition:generic`. Always read the granted scope (`user.scope()`).
+- Dev mode: open the app at `http://127.0.0.1:<port>` (the development client's redirect URI host) so the sign-in's
+  binding cookie reaches the callback; a 401 at the callback means another browser/host/tab or an expired sign-in.
+- Packaged-app tests (`@QuarkusIntegrationTest`) run in normal launch mode: configure a confidential client
+  (`client-base-url`, a generated key, `session.encryption-key`) and let the fake authorization server reach the
+  metadata with `FakeAuthorizationServer.rewriteClientFetches(base, "http://127.0.0.1:<port>")`; see
+  `integration-tests/.../AtprotoFakes.java`.

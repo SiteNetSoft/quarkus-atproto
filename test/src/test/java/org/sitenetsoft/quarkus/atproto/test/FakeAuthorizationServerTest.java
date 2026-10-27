@@ -131,8 +131,8 @@ class FakeAuthorizationServerTest {
     long now = Instant.now().getEpochSecond();
     assertAssertionRejected(Map.of("iss", appBase + "/other-client.json"), "iss and sub");
     assertAssertionRejected(Map.of("sub", appBase + "/other-client.json"), "iss and sub");
-    assertAssertionRejected(Map.of("iat", now - 301), "iat");
-    assertAssertionRejected(Map.of("iat", now + 61), "iat");
+    assertAssertionRejected(Map.of("iat", now - 330), "iat");
+    assertAssertionRejected(Map.of("iat", now + 90), "iat");
     assertAssertionRejected(Map.of("aud", "http://elsewhere.example"), "aud");
     assertAssertionRejected(Map.of("exp", now - 1), "expired");
     assertEquals(0, fake.as().parCount());

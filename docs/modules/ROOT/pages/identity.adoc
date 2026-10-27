@@ -1,0 +1,66 @@
+= Identity
+
+`quarkus-atproto-identity` resolves AT Protocol identities: handle → DID, and DID → a verified identity (handle checked
+in both directions, PDS, signing key). DID documents come from `quarkus-did`; every HTTP fetch goes through
+`quarkus-safe-fetch`.
+
+[source,java]
+----
+@Inject IdentityResolver identities;            // blocking; never on the event loop
+@Inject ReactiveIdentityResolver reactive;      // Mutiny
+
+AtIdentifier id = input.startsWith("did:") ? Did.parse(input) : Handle.normalise(input);
+AtprotoIdentity who = identities.resolve(id);
+who.did();                  // did:plc:… or did:web:…
+who.handle();               // verified handle, or Handle.INVALID
+who.handleVerified();
+who.pds();                  // https://host[:port]
+who.signingKeyMultibase();  // the #atproto key, Optional
+----
+
+== Rules
+
+* *Handle → DID*: DNS TXT `_atproto.<handle>` (`did=<did>`) and HTTPS `https://<handle>/.well-known/atproto-did` run in
+  parallel. A DNS answer wins at once; HTTPS is used only once DNS reported nothing. Several different DIDs in DNS fail.
+  The handle is `HandleNotFound` only when both methods answered cleanly; if either could not tell (DNS error,
+  transport failure, 5xx, 429) it is `IdentityResolutionFailed` ("try again").
+* *Bidirectional check*: the DID document's first `at://` handle in `alsoKnownAs` is kept only if it resolves back to
+  the same DID, otherwise the identity's handle is `handle.invalid`. `resolve(handle)` also requires the document to
+  claim the handle you started from.
+* *PDS*: the `#atproto_pds` service of type `AtprotoPersonalDataServer`, a bare `https://host[:port]` origin (`http`
+  only when `quarkus.safe-fetch.https-only=false`), else `NoPds`.
+* Only `did:plc` and `did:web` are accepted. Successes are cached for `cache-ttl`; failures are not.
+
+== DNS
+
+The `TxtResolver` SPI (`Uni<List<String>> txt(String name)`) does the DNS lookups. The default `VertxTxtResolver`
+(`@DefaultBean`) uses the Quarkus-managed Vert.x DNS client with `quarkus.atproto.identity.dns.servers` or the system
+resolver configuration. Declare your own `TxtResolver` bean to replace it.
+
+== Configuration
+
+[cols="3,1,4"]
+|===
+|Property |Default |Purpose
+
+|`quarkus.atproto.identity.cache-ttl` |`5m` |Cache for handle → DID and DID → identity; `0` disables. Keep under 10 minutes for OAuth
+|`quarkus.atproto.identity.dns.servers` |system resolver |DNS servers for the default `TxtResolver`, tried in order (`host`, `host:port`, `[v6]:port`)
+|`quarkus.atproto.identity.https-well-known-override."<handle>"` |none |*Test and dev only*: fetch the handle's well-known from `<base>/.well-known/atproto-did`. Ignored in production (normal launch mode) with a WARN
+|===
+
+Also relevant: `quarkus.did.plc.url` (the PLC directory) and `quarkus.safe-fetch.*`.
+
+== Testing
+
+* `@QuarkusTest` and `QuarkusUnitTest`: replace `TxtResolver` with a bean answering from a map, point
+  `quarkus.did.plc.url` at `FakeAtproto.plcUrl()`, map each handle with `https-well-known-override`, and set
+  `quarkus.safe-fetch.https-only=false` and `quarkus.safe-fetch.allow-private-addresses=true`.
+* `@QuarkusIntegrationTest` (the packaged application runs in normal launch mode, where the override is ignored and
+  your test beans are not in the application): start a `FakeDns` (from `quarkus-atproto-test`) with
+  `dns.handle(account)` and set `quarkus.atproto.identity.dns.servers` to `dns.server()`. The sample application's
+  `AtprotoFakes` test resource does exactly this.
+
+== Dev UI
+
+The card has an identity lookup (handle or DID → DID, verified handle, PDS, signing key, or the error), the cache TTL,
+the DNS servers and the active well-known overrides.

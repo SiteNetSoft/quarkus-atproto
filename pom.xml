@@ -15,8 +15,7 @@
   <modules>
     <module>atproto-syntax</module>
     <module>atproto-lexicon-codegen</module>
-    <module>lexicons/core</module>
-    <module>lexicons/standard-site</module>
+    <module>lexicons</module>
     <module>identity</module>
     <module>lexicon</module>
     <module>xrpc</module>

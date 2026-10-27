@@ -1,0 +1,82 @@
+= Lexicons
+
+https://atproto.com/specs/lexicon[Lexicons] describe AT Protocol records and XRPC methods. `quarkus-atproto-lexicon`
+generates Java types from your own Lexicon JSON at build time and validates records against every Lexicon on the
+classpath at run time. Lexicon *packs* ship JSON plus types generated at their own build.
+
+== Packs
+
+A pack is a jar with Lexicon JSON at `META-INF/atproto/lexicons/<nsid path>.json`, the generated classes and
+`META-INF/atproto/lexicons/index.json` (`nsid#def` → class).
+
+[cols="2,3"]
+|===
+|Pack |Contents
+
+|`atproto-lexicons-core` |The `com.atproto.*` subset the client uses (`com.atproto.repo.*`, `com.atproto.label.defs`), typed client `com.atproto.repo.RepoClient`
+|`atproto-lexicons-standard-site` |Standard.site: `site.standard.Publication`, `site.standard.Document`, `graph.Subscription`, `graph.Recommend`, `theme.Basic`, `theme.Color`; the permission sets `authFull`/`authSocial` as JSON only
+|===
+
+== Generated types
+
+* `record` and `object` → Java `record`: optional properties are plain nullable fields; properties the Lexicon does not
+  declare are kept in `unknownFields`, so read-modify-write is lossless. A convenience constructor without
+  `unknownFields` exists.
+* `union` → sealed interface (open unions add `Unknown`); string formats → `atproto-syntax` types; `blob` → `BlobRef`;
+  `cid-link` → `CidLink`; `bytes` → `Bytes`; `unknown` → `JsonNode`; queries and procedures → a typed client per
+  namespace (needs `quarkus-atproto-xrpc`).
+* Package = NSID authority (`site.standard.document` → `site.standard`), class = PascalCase name (`Document`), other
+  defs nested.
+* Constraints are not checked in constructors: that is the validator's job.
+
+[source,java]
+----
+Document doc = new Document("/hello", URI.create("at://did:plc:abc/site.standard.publication/3lx"), null, null,
+        "Hello", null, null, null, null, null, null, Datetime.now(), "Plain text", null);
+----
+
+== Your own Lexicons
+
+Put Lexicon files under `src/main/lexicons/` (any layout). The extension's code generator runs in the build's
+`generate-code` phase (`quarkus-maven-plugin` goal `generate-code`, as in every Quarkus project) and writes to
+`target/generated-sources/atproto-lexicon`. References to pack NSIDs use the pack's classes, found through the
+dependencies' `index.json`. The files are also registered for validation.
+
+[cols="3,1,4"]
+|===
+|Property (build time) |Default |Purpose
+
+|`quarkus.atproto.lexicon.codegen.include` |all |NSID globs (`*` = any characters) of the Lexicons to generate
+|`quarkus.atproto.lexicon.codegen.exclude` |none |NSID globs not to generate (still read for references)
+|`quarkus.atproto.lexicon.codegen.package-prefix` |none |Prefix for generated packages (`<prefix>.com.example.Note`)
+|`quarkus.atproto.lexicon.codegen.generate-from-dependencies` |none |`groupId:artifactId` of dependencies whose Lexicon JSON (shipped without classes) is generated into the application
+|===
+
+== Validation
+
+[source,java]
+----
+@Inject LexiconValidator validator;
+
+List<ValidationProblem> problems = validator.validate(Nsid.parse("site.standard.document"), record);
+// ValidationProblem(path = "/title", message = "is 501 graphemes long, at most 500 graphemes allowed (maxGraphemes)")
+----
+
+Checked: `$type` equals the collection, required properties, nullability, types, `minLength`/`maxLength` in UTF-8
+bytes, `minGraphemes`/`maxGraphemes` in extended grapheme clusters, `enum`, `const`, string formats, integer bounds,
+array sizes, blob `accept` and `maxSize`, closed and open unions, refs across files. `knownValues` are not enforced.
+
+[cols="3,1,4"]
+|===
+|Property (runtime) |Default |Purpose
+
+|`quarkus.atproto.lexicon.validation` |`optimistic` |`optimistic`: validate known collections, accept unknown ones; `true`: unknown collections are rejected; `false`: skip validation
+|===
+
+`LexiconRegistry` (`knows`, `def`, `document`, `nsids`) is filled at build time; there is no runtime classpath scan.
+
+== Native
+
+The Lexicon JSON is registered as native-image resources, and every class listed in an `index.json` (the packs) is
+registered for reflection with its nested types. Annotate types generated from your own `src/main/lexicons` that you
+serialise with `@RegisterForReflection(targets = ...)`.

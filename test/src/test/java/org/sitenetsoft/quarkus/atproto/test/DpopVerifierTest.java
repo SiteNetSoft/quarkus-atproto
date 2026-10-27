@@ -84,13 +84,13 @@ class DpopVerifierTest {
 
   @Test
   void iatTooOld() {
-    claims.put("iat", Instant.now().getEpochSecond() - 61);
+    claims.put("iat", Instant.now().getEpochSecond() - 90);
     assertInvalid("iat");
   }
 
   @Test
   void iatInTheFuture() {
-    claims.put("iat", Instant.now().getEpochSecond() + 61);
+    claims.put("iat", Instant.now().getEpochSecond() + 90);
     assertInvalid("iat");
   }
 

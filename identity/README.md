@@ -71,7 +71,10 @@ CDI bean implementing `TxtResolver` to replace it (tests use a map).
 
 Fetches also obey `quarkus.safe-fetch.*` and `quarkus.did.*` (e.g. `quarkus.did.plc.url`). In tests against loopback
 servers set `quarkus.safe-fetch.https-only=false` and `quarkus.safe-fetch.allow-private-addresses=true`, replace
-`TxtResolver`, and map each test handle with `https-well-known-override`.
+`TxtResolver`, and map each test handle with `https-well-known-override`. A `@QuarkusIntegrationTest` runs the
+packaged application in normal launch mode (the override is ignored and test beans are not part of the app): start a
+`FakeDns` from `quarkus-atproto-test` (`dns.handle(account)`) and set `quarkus.atproto.identity.dns.servers` to
+`dns.server()`.
 
 ## Dev UI
 

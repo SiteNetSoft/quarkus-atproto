@@ -14,6 +14,22 @@ Status: experimental, version 0.1.
 </dependency>
 ```
 
+## Client identity
+
+- **Confidential client** (production; whenever `client-base-url` is a non-loopback URL): `client_id` =
+  `<client-base-url><metadata-path>`, a client metadata document served by the extension (with `jwks_uri`, also
+  served), authenticated with `private_key_jwt` (ES256). Needs `signing-key.location` and `session.encryption-key`;
+  startup fails naming the property when one is missing. The metadata and JWKS are served under
+  `quarkus.http.root-path`: include it in `client-base-url`.
+- **Localhost development client** (dev and test mode when `client-base-url` is unset or loopback): `client_id` =
+  `http://localhost?redirect_uri=http://127.0.0.1:<port><callback-path>&scope=<scope>`, a public client without keys.
+  bsky.social accepts it, so a developer signs in with a real account from a laptop (see the docs' live check). Refused
+  in production (normal launch mode). In dev mode the metadata path answers 404.
+
+The registered scope (metadata `scope` or the development `client_id`'s) is `scope` plus `fallback-scope`: an
+authorization server grants only what the client registered. The **granted** scope can be narrower than the request;
+the session records it (`AtprotoUser.scope()`) and writes are checked against it.
+
 ## Sign-in modes
 
 `quarkus.atproto.oauth.mode` (runtime, default `login`):
@@ -129,6 +145,44 @@ In-memory `@DefaultBean`s that WARN once in production; provide your own `@Appli
 - `AtprotoAccountLinks` / `ReactiveAtprotoAccountLinks` (`link` mode): `link(appPrincipal, did, sessionId)`,
   `findByPrincipal(appPrincipal)`, `sessionFor(appPrincipal, did)`, `unlink(appPrincipal, did)`. A link outlives its
   session (see above).
+
+## Configuration
+
+| Property | Default | Purpose |
+| --- | --- | --- |
+| `quarkus.atproto.oauth.enabled` (build time) | `true` | When `false` no routes are registered |
+| `quarkus.atproto.oauth.mode` | `login` | `login` or `link` |
+| `quarkus.atproto.oauth.client-base-url` | none | Public base URL; makes this a confidential client. Required in production |
+| `quarkus.atproto.oauth.client-name` | none | `client_name` in the client metadata |
+| `quarkus.atproto.oauth.client-uri` | `client-base-url` | `client_uri` in the client metadata |
+| `quarkus.atproto.oauth.logo-uri` | none | `logo_uri` in the client metadata |
+| `quarkus.atproto.oauth.tos-uri` | none | `tos_uri` in the client metadata |
+| `quarkus.atproto.oauth.policy-uri` | none | `policy_uri` in the client metadata |
+| `quarkus.atproto.oauth.scope` | `atproto` | Scopes requested, space separated |
+| `quarkus.atproto.oauth.fallback-scope` | none | Scope to retry PAR with once after `invalid_scope` (e.g. `atproto transition:generic`) |
+| `quarkus.atproto.oauth.login-path` | `/atproto/login` | Login endpoint (same-origin `POST`) |
+| `quarkus.atproto.oauth.callback-path` | `/atproto/oauth/callback` | OAuth callback (the redirect URI) |
+| `quarkus.atproto.oauth.logout-path` | `/atproto/logout` | Logout endpoint (`login` mode) |
+| `quarkus.atproto.oauth.unlink-path` | `/atproto/unlink` | Unlink endpoint (`link` mode) |
+| `quarkus.atproto.oauth.metadata-path` | `/oauth-client-metadata.json` | Client metadata document; part of the `client_id` |
+| `quarkus.atproto.oauth.jwks-path` | `/oauth/jwks.json` | The client's public JWKS (`jwks_uri`) |
+| `quarkus.atproto.oauth.signing-key.location` | none | ES256 private keys (PKCS#8 PEM or JWK; file system or class path), comma separated; the first signs, all are published. Required for a confidential client |
+| `quarkus.atproto.oauth.session.cookie-name` | `atproto-session` | Session cookie name (the binding cookie is `<name>-binding`) |
+| `quarkus.atproto.oauth.session.encryption-key` | generated per run in dev and test | Key encrypting the session cookie, at least 32 characters. Required in production |
+| `quarkus.atproto.oauth.session.max-age` | `14d` | How long a session lasts |
+| `quarkus.atproto.oauth.pending.ttl` | `10m` | How long a started sign-in waits for its callback |
+| `quarkus.atproto.oauth.landing-page` | `/` | Where to go after a sign-in without `redirect` |
+| `quarkus.atproto.oauth.error-page` | none | Where to send a failed sign-in; unset: 401 with the reason |
+
+## Testing
+
+`quarkus-atproto-test` (test scope) has `FakeAtproto` (PLC directory, authorization server, PDS) and `FakeDns`.
+In `QuarkusUnitTest` / `@QuarkusTest` the development client is used: replace `TxtResolver`, point
+`quarkus.did.plc.url` at the fake, map handles with `quarkus.atproto.identity.https-well-known-override."<handle>"`
+and relax safe-fetch (`https-only=false`, `allow-private-addresses=true`). A `@QuarkusIntegrationTest` runs the
+packaged application in normal launch mode, so it is a confidential client there: see the `integration-tests` module
+(`AtprotoFakes` test resource: `client-base-url`, a generated key, `FakeDns` via `quarkus.atproto.identity.dns.servers`,
+`FakeAuthorizationServer.rewriteClientFetches` to reach the app's client metadata on loopback).
 
 ## Dev UI
 

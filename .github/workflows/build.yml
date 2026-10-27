@@ -35,7 +35,14 @@ jobs:
             git clone --depth 1 https://github.com/SiteNetSoft/$repo ../$repo
             mvn -B -T 8 -f ../$repo/pom.xml install -DskipTests -Dquarkus.version=${{ steps.q.outputs.version }}
           done
+      # unit and extension tests, then the sample app's ITs (login and link mode) against the packaged jar
       - run: mvn -B -T 8 verify -Dquarkus.version=${{ steps.q.outputs.version }}
+      - name: Test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-jvm-${{ matrix.quarkus }}
+          path: "**/target/*-reports/"
 
   native:
     name: Native
@@ -55,6 +62,13 @@ jobs:
             git clone --depth 1 https://github.com/SiteNetSoft/$repo ../$repo
             mvn -B -T 8 -f ../$repo/pom.xml install -DskipTests
           done
+      # builds the sample app (integration-tests) as a native executable and runs both ITs against it
       - run: >
           mvn -B -T 8 verify -Dnative -pl integration-tests -am
           -Dquarkus.native.additional-build-args=-J-XX:TieredStopAtLevel=1,--parallelism=8
+      - name: Test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-native
+          path: "**/target/*-reports/"

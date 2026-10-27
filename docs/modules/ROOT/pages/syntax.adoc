@@ -1,0 +1,33 @@
+= Syntax types
+
+`atproto-syntax` is a plain Java library (Jackson only, no Quarkus) with one immutable, validated type per AT Protocol
+string format. Constructors and `parse` throw `SyntaxException` (an `IllegalArgumentException`) on invalid input;
+every type has a static `isValid(String)`. The rules follow https://atproto.com/specs and pass the official syntax
+interop fixtures.
+
+[source,xml]
+----
+<dependency>
+  <groupId>org.sitenetsoft.quarkus</groupId>
+  <artifactId>atproto-syntax</artifactId>
+</dependency>
+----
+
+[cols="1,3"]
+|===
+|Type |Notes
+
+|`Did` |`did:<method>:<id>`; `method()`, `isBlessed()` (`plc` and `web`, the AT Protocol account methods)
+|`Handle` |Stored lowercase. `Handle.normalise(userInput)` strips a leading `@` and a trailing `.` before parsing (what a user types: `@Alice.bsky.social.`). Disallowed TLDs (`.local`, `.arpa`, `.example`, ...) are refused; `Handle.INVALID` is `handle.invalid`, the placeholder for a handle that failed verification
+|`AtIdentifier` |Sealed: `Did` or `Handle`
+|`Nsid` |`authority()`, `name()`, `segments()`, `authorityDomain()`
+|`RecordKey`, `RecordKeyType` |Record keys and the Lexicon `key` types (`tid`, `nsid`, `literal:<value>`, `any`); `RecordKeyType.accepts(key)`
+|`Tid` |`Tid.next()` (monotonic per JVM, see `TidClock`), `timestamp()`
+|`AtUri` |`at://<authority>[/<collection>[/<rkey>]]`; `AtUri.of(...)`, `authority()`, `collection()`, `rkey()`
+|`Cid` |String form of a CID (syntax check only)
+|`Datetime` |RFC 3339 profile of the spec; `Datetime.now()` / `of(Instant)` give the preferred form (UTC, milliseconds, `Z`); `instant()`
+|`Language` |BCP 47 language tag
+|===
+
+`AtprotoSyntaxModule` is a Jackson module (de)serialising every type above as its string form. The Quarkus extensions
+register it on the managed `ObjectMapper`; outside Quarkus, `mapper.registerModule(new AtprotoSyntaxModule())`.

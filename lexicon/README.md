@@ -98,3 +98,10 @@ Rules checked (reporting every problem, each with a JSON Pointer path):
 
 The Quarkus-managed `ObjectMapper` gets the `atproto-syntax` Jackson module, so generated types (de)serialise with
 it directly.
+
+## Native
+
+Lexicon JSON is registered as native-image resources. Every class named in a `META-INF/atproto/lexicons/index.json`
+(the packs) is registered for reflection with its nested classes, so Jackson can read and write the generated records
+and unions. Types generated from the application's own `src/main/lexicons` have no index: annotate the ones you
+(de)serialise in native mode with `@RegisterForReflection(targets = ...)`.
